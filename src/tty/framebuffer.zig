@@ -227,7 +227,7 @@ pub const AdvancedTerminal = struct {
     // damage tracking
     damage: ?AABB = null,
 
-    const Mirrors = std.ArrayListUnmanaged(Mirror);
+    const Mirrors = std.ArrayListUnmanaged(Framebuffer);
 
     const Self = @This();
 
@@ -248,46 +248,87 @@ pub const AdvancedTerminal = struct {
 
     pub inline fn updateMirrors(self: *Self) void {
         if (self.damage == null) return;
-        for (self.mirrors.items) |*mirror|
-            mirror.update();
+
+        const src = &self.base.buffer;
+
+        for (self.mirrors.items) |*dst| {
+            const height = @min(src.mode.height, dst.mode.height);
+            const width = @min(src.mode.width, dst.mode.width);
+
+            var dst_offset: usize = 0;
+            var src_offset: usize = 0;
+
+            if (true) { // testing
+                @memset(dst.buf, 0);
+                continue;
+            }
+
+            if (src.sameEncoding(dst)) {
+                // fast path for same encoder
+
+                const end = src.bytes * width;
+
+                for (0..height) |_| {
+                    @memcpy(
+                        dst.buf[dst_offset .. dst_offset + end],
+                        src.buf[src_offset .. src_offset + end],
+                    );
+
+                    dst_offset += dst.mode.pitch;
+                    src_offset += src.mode.pitch;
+                }
+            } else {
+                // decode and encode again
+
+                const dst_diff = dst.mode.pitch - (dst.bytes * width);
+                const src_diff = src.mode.pitch - (src.bytes * width);
+
+                for (0..height) |_| {
+                    for (0..width) |_| {
+                        dst.writeColor(dst_offset, src.readColor(src_offset));
+
+                        dst_offset += dst.bytes;
+                        src_offset += src.bytes;
+                    }
+
+                    dst_offset += dst_diff;
+                    src_offset += src_diff;
+                }
+            }
+        }
+
         self.damage = null;
     }
 
-    pub inline fn initMirroring(self: *Self, old_con: Terminal) !void {
-        self.addMirror(old_con.buffer) catch unreachable;
+    pub inline fn initMirroring(self: *Self, old_buf: Framebuffer) !void {
+        self.addMirror(old_buf) catch unreachable;
 
         // initial copy
 
-        const s_buf = self.base.buffer.buf;
-        const m_buf = old_con.buffer.buf;
-        const m_cols = old_con.info.cols;
+        const src = self.base.buffer;
+        const dst = old_buf;
 
-        const m_bytes = old_con.buffer.bytes;
-        const s_pitch = self.base.buffer.mode.pitch;
-        const m_pitch = old_con.buffer.mode.pitch;
+        std.debug.assert(src.mode.height == dst.mode.height);
+        std.debug.assert(src.mode.width == dst.mode.width);
 
-        var s_offset: usize = 0;
-        var m_offset: usize = 0;
+        var dst_offset: usize = 0;
+        var src_offset: usize = 0;
 
-        const end = m_bytes * m_cols * 8;
+        const end = src.bytes * src.mode.width;
 
-        for (0..old_con.info.rows) |_| inline for (0..16) |_| {
+        for (0..src.mode.height) |_| {
             @memcpy(
-                s_buf[s_offset .. s_offset + end],
-                m_buf[m_offset .. m_offset + end],
+                dst.buf[dst_offset .. dst_offset + end],
+                src.buf[src_offset .. src_offset + end],
             );
 
-            s_offset += s_pitch;
-            m_offset += m_pitch;
-        };
+            dst_offset += dst.mode.pitch;
+            src_offset += src.mode.pitch;
+        }
     }
 
-    pub inline fn addMirror(self: *Self, fb: Framebuffer) !void {
-        try self.mirrors.append(memory.allocator, .{
-            .buffer = fb,
-            .info = Terminal.Info.init(fb.mode),
-            .mirroring = &self.base,
-        });
+    pub inline fn addMirror(self: *Self, buffer: Framebuffer) !void {
+        try self.mirrors.append(memory.allocator, buffer);
     }
 
     // SPECIAL CHARACTER HANDLING
@@ -311,66 +352,5 @@ pub const AdvancedTerminal = struct {
                 self.base.info.rows * 8,
             },
         };
-    }
-};
-
-// TERMINAL MIRROR
-
-pub const Mirror = struct {
-    buffer: Framebuffer,
-    info: Terminal.Info,
-    mirroring: *const Terminal,
-
-    const Self = @This();
-
-    pub fn update(self: *Self) void {
-        const s = &self.buffer;
-        const m = self.mirroring;
-        const m_rows = m.info.rows;
-        const m_cols = m.info.cols;
-
-        const m_bytes = m.buffer.bytes;
-        const s_pitch = s.mode.pitch;
-        const m_pitch = m.buffer.mode.pitch;
-
-        var s_offset: usize = 0;
-        var m_offset: usize = 0;
-        @memset(self.buffer.buf, 0);
-
-        if (m.buffer.sameEncoding(self.buffer)) {
-            // fast path for same encoder
-
-            const s_buf = s.buf;
-            const m_buf = m.buffer.buf;
-            const end = m_bytes * m_cols * 8;
-
-            for (0..m_rows * 16) |_| {
-                @memcpy(
-                    s_buf[s_offset .. s_offset + end],
-                    m_buf[m_offset .. m_offset + end],
-                );
-
-                s_offset += s_pitch;
-                m_offset += m_pitch;
-            }
-        } else {
-            // decode and encode again
-
-            const s_cols = self.info.cols;
-            const s_diff = s_pitch - (s_cols * s.bytes * 8);
-            const m_diff = m_pitch - (m_cols * m_bytes * 8);
-
-            for (0..m_rows) |_| {
-                for (0..m_cols) |_| {
-                    s.writeColor(s_offset, m.buffer.readColor(m_offset));
-
-                    s_offset += s.bytes;
-                    m_offset += m_bytes;
-                }
-
-                s_offset += s_diff;
-                m_offset += m_diff;
-            }
-        }
     }
 };

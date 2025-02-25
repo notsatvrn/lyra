@@ -50,10 +50,8 @@ export fn _start() callconv(.c) noreturn {
 
     // now we have memory, bring up more framebuffers and init double-buffering
 
-    if (false) { // this is broken atm
-        logger.info("doing fb extended setup", .{});
-        fbExtendedSetup();
-    }
+    logger.info("doing fb extended setup", .{});
+    fbExtendedSetup();
 
     // build pci device tree and bring up cpus
 
@@ -63,7 +61,7 @@ export fn _start() callconv(.c) noreturn {
 
     logger.info("no work left to do, halting", .{});
 
-    //tty.sync();
+    tty.sync();
 
     arch.halt();
 }
@@ -83,7 +81,7 @@ inline fn fbExtendedSetup() void {
 
     new_out.virtfb.base.render = smallest.render;
     new_out.virtfb.base.cursor = smallest.cursor;
-    new_out.virtfb.initMirroring(smallest) catch return;
+    new_out.virtfb.initMirroring(s_buffer) catch return;
 
     defer tty.out = new_out;
 

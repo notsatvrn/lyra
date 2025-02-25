@@ -113,6 +113,7 @@ pub fn BinnedAllocator(comptime config: Config) type {
             return self.backing_allocator.rawResize(buf, alignment, new_len, ret_addr);
         }
 
+        // Resize and potentially reallocate, moving the old data to and from bins.
         fn remap(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
             const self: *Self = @ptrCast(@alignCast(ctx));
 
@@ -139,6 +140,7 @@ pub fn BinnedAllocator(comptime config: Config) type {
             }
 
             if (new_len <= largest) {
+                // Move a shrunken large allocation back into a bin
                 const new = alloc(ctx, new_len, alignment, ret_addr) orelse return null;
 
                 const lcl = @min(new_len, buf.len);

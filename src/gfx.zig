@@ -1,4 +1,4 @@
-pub const Framebuffer = @import("gfx/framebuffer.zig").Framebuffer;
+pub const Framebuffer = @import("gfx/Framebuffer.zig");
 pub const color = @import("gfx/color.zig");
 
 pub const Point = @Vector(2, usize);

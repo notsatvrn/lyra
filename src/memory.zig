@@ -236,25 +236,26 @@ pub fn resizeBlockInRegion(
 ) ?[][page_size]u8 {
     assert(@intFromPtr(block.ptr) >= @intFromPtr(region.ptr));
 
-    if (block.len >= new_size) return block[0..new_size];
+    if (new_size <= block.len) return block.ptr[0..new_size];
 
     region.lock.lock();
     defer region.lock.unlock();
 
     const start = block.ptr - region.ptr;
-    const new_start = @call(
+    const resized = @call(
         .always_inline,
         UsedSet.resizeRange,
-        .{ &region.set, start, block.len, new_size, may_realloc },
-    ) orelse return null;
+        .{ &region.set, start, block.len, new_size },
+    );
 
-    if (may_realloc and new_start != start) {
-        const new_block = region.ptr + new_start;
-        @memcpy(new_block[0..block.len], block);
-        return new_block[0..new_size];
-    }
+    if (resized) return block.ptr[0..new_size];
+    if (!may_realloc) return null;
 
-    return block.ptr[0..new_size];
+    region.set.unclaimRange(start, block.len);
+    const new_start = region.set.claimRange(new_size) orelse return null;
+    const new_block = region.ptr + new_start;
+    @memcpy(new_block[0..block.len], block);
+    return new_block[0..new_size];
 }
 
 pub fn resizeBlock(block: [][page_size]u8, new_size: usize, comptime may_realloc: bool) ?[][page_size]u8 {
@@ -304,7 +305,6 @@ pub const PageAllocator = struct {
     inline fn resizeInner(buf: []u8, new_size: usize, comptime may_realloc: bool) ?[*]u8 {
         const old_len = pagesNeeded(buf.len);
         const new_len = pagesNeeded(new_size);
-        if (old_len >= new_len) return buf.ptr;
 
         const ptr: [*][page_size]u8 = @ptrCast(buf.ptr);
         const block = @call(.always_inline, resizeBlock, .{ ptr[0..old_len], new_len, may_realloc });
@@ -350,7 +350,6 @@ pub const page_allocator = Allocator{
 };
 
 pub const binned = @import("memory/binned_allocator.zig");
-
 const GlobalAllocator = binned.BinnedAllocator(.{ .thread_safe = true });
 var global_allocator = GlobalAllocator.init;
 

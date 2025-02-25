@@ -182,40 +182,30 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
 
 // RESIZE RANGE (REALLOCATION)
 
-pub fn resizeRange(self: *Self, start: usize, size: usize, new_size: usize, comptime may_move: bool) ?usize {
+pub fn resizeRange(self: *Self, start: usize, size: usize, new_size: usize) bool {
     assert(start + size < self.len);
 
-    if (size == new_size) return start;
+    if (size == new_size) return true;
 
     // shrinkage is super fast
     if (new_size < size) {
         self.operations(start + new_size, size - new_size, .unset);
-        return start;
+        return true;
     }
 
     // growth is a bit more difficult
 
     const end = start + size;
     const growth = new_size - size;
-    // either we get lucky and just expand the range...
+
     if (end == self.tail and start + new_size <= self.len - self.tail) {
         self.operations(end, growth, .set);
         self.tail += growth;
-        return start;
+        return true;
     } else if (self.operations(end, growth, .read) == 0) {
         self.operations(end, growth, .set);
-        return start;
-    }
-
-    // ...or we have to move it.
-    if (!may_move) return null;
-    return self.reallocRange(start, size, new_size);
-}
-
-pub inline fn reallocRange(self: *Self, start: usize, size: usize, new_size: usize) ?usize {
-    const new_start = self.claimRange(new_size) orelse return null;
-    self.unclaimRange(start, size);
-    return new_start;
+        return true;
+    } else return false;
 }
 
 // UNCLAIM RANGE (DEALLOCATION)
