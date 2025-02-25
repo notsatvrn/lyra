@@ -1,30 +1,31 @@
 const std = @import("std");
 const Target = std.Target;
-const Feature = Target.Cpu.Feature;
+const FeatureSet = Target.Cpu.Feature.Set;
 
 pub fn build(b: *std.Build) void {
-    const provided_arch = b.standardTargetOptions(.{}).result.cpu.arch;
+    const arch = b.standardTargetOptions(.{}).result.cpu.arch;
 
-    const arch = switch (provided_arch) {
-        .x86, .x86_64 => std.Target.Cpu.Arch.x86,
-        else => @panic("Only x86 is supported at this time."),
-    };
+    if (arch != .x86_64) @panic("Only x86-64 is supported at this time.");
 
     const features = switch (arch) {
-        .x86 => x86: {
-            const features = Target.x86.Feature;
+        .x86_64 => x86_64: {
+            const Feature = Target.x86.Feature;
 
-            var features_add = Feature.Set.empty;
-            features_add.addFeature(@intFromEnum(features.soft_float));
+            // Disable all hardware floating point features.
+            var features_sub = FeatureSet.empty;
+            features_sub.addFeature(@intFromEnum(Feature.x87));
+            features_sub.addFeature(@intFromEnum(Feature.mmx));
+            features_sub.addFeature(@intFromEnum(Feature.sse));
+            features_sub.addFeature(@intFromEnum(Feature.sse2));
+            features_sub.addFeature(@intFromEnum(Feature.avx));
+            features_sub.addFeature(@intFromEnum(Feature.avx2));
+            // Enable software floating point instead.
+            var features_add = FeatureSet.empty;
+            features_add.addFeature(@intFromEnum(Feature.soft_float));
+            // Require some modern CPU features for optimization.
+            features_add.addFeature(@intFromEnum(Feature.popcnt));
 
-            var features_sub = Feature.Set.empty;
-            features_sub.addFeature(@intFromEnum(features.mmx));
-            features_sub.addFeature(@intFromEnum(features.sse));
-            features_sub.addFeature(@intFromEnum(features.sse2));
-            features_sub.addFeature(@intFromEnum(features.avx));
-            features_sub.addFeature(@intFromEnum(features.avx2));
-
-            break :x86 .{ features_add, features_sub };
+            break :x86_64 .{ features_add, features_sub };
         },
         else => unreachable,
     };
@@ -37,24 +38,43 @@ pub fn build(b: *std.Build) void {
         .cpu_features_sub = features[1],
     });
 
-    const optimize = b.standardOptimizeOption(.{});
-
-    const exe = b.addExecutable(.{
+    // Create the kernel executable.
+    const kernel = b.addExecutable(.{
         .name = "lyra",
-        .root_source_file = b.path("src/kmain.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
-        .optimize = optimize,
+        .optimize = b.standardOptimizeOption(.{}),
+        .strip = true, // Reduce binary size.
+        .code_model = .kernel, // Higher half kernel.
+        .linkage = .static, // Disable dynamic linking.
+        .pic = false, // Disable position independent code.
+        .omit_frame_pointer = false, // Needed for stack traces.
     });
 
+    // Disable features that are problematic in kernel space.
+    kernel.root_module.red_zone = false;
+    kernel.root_module.stack_check = false;
+    kernel.root_module.stack_protector = false;
+    kernel.want_lto = false;
+    // Delete unused sections to reduce the kernel size.
+    kernel.link_function_sections = true;
+    kernel.link_data_sections = true;
+    kernel.link_gc_sections = true;
+    // Force the page size to 4 KiB to prevent binary bloat.
+    kernel.link_z_max_page_size = 0x1000;
+
     switch (arch) {
-        .x86 => setupX86(b, exe),
+        .x86_64 => {
+            kernel.addAssemblyFile(b.path("src/arch/x86_64/int/isr_stubs.s"));
+            kernel.setLinkerScript(b.path("src/arch/x86_64/linker.ld"));
+
+            if (b.lazyDependency("cpuid", .{})) |cpuid| {
+                const module = cpuid.module("cpuid");
+                kernel.root_module.addImport("cpuid", module);
+            }
+        },
         else => unreachable,
     }
 
-    b.installArtifact(exe);
-}
-
-fn setupX86(b: *std.Build, exe: *std.Build.Step.Compile) void {
-    //exe.addAssemblyFile(b.path("src/arch/x86/start.s"));
-    exe.setLinkerScriptPath(b.path("src/arch/x86/linker.ld"));
+    b.installArtifact(kernel);
 }

@@ -27,8 +27,8 @@ pub inline fn insl(port: u16, addr: anytype, cnt: usize) void {
     );
 }
 
-pub inline fn out(port: u16, value: anytype) void {
-    switch (comptime @TypeOf(value)) {
+pub inline fn out(comptime T: type, port: u16, value: T) void {
+    switch (T) {
         u8 => asm volatile ("outb %[value], %[port]"
             :
             : [value] "{al}" (value),
@@ -66,8 +66,8 @@ pub inline fn readRegister(comptime T: type, comptime reg: []const u8, addr: usi
     };
 }
 
-pub inline fn writeRegister(comptime reg: []const u8, addr: usize, value: anytype) void {
-    switch (@TypeOf(value)) {
+pub inline fn writeRegister(comptime T: type, comptime reg: []const u8, addr: usize, value: T) void {
+    switch (T) {
         u8 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
             :
             : [addr] "+m" (addr),
@@ -98,25 +98,35 @@ pub inline fn getRegister(comptime T: type, comptime reg: []const u8) T {
         u32 => asm volatile ("mov %" ++ reg ++ ", %[out]"
             : [out] "=r" (-> u32),
         ),
-        else => @compileError("invalid type (must be u8, u16, u32)"),
+        u64 => asm volatile ("mov %" ++ reg ++ ", %[out]"
+            : [out] "=r" (-> u64),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32, u64)"),
     };
 }
 
-pub inline fn setRegister(comptime reg: []const u8, value: anytype) void {
-    switch (@TypeOf(value)) {
+pub inline fn setRegister(comptime T: type, comptime reg: []const u8, value: T) void {
+    switch (T) {
         u8 => asm volatile ("mov %[value], %" ++ reg
+            :
             : [value] "qi" (value),
         ),
         u16 => asm volatile ("mov %[value], %" ++ reg
+            :
             : [value] "ri" (value),
         ),
         u32 => asm volatile ("mov %[value], %" ++ reg
+            :
             : [value] "ri" (value),
         ),
-        else => @compileError("invalid type (must be u8, u16, u32)"),
+        u64 => asm volatile ("mov %[value], %" ++ reg
+            :
+            : [value] "ri" (value),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32, u64)"),
     }
 }
 
 pub inline fn delay() void {
-    out(0x80, @as(u8, 0));
+    out(u8, 0x80, 0);
 }
