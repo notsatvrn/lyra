@@ -221,7 +221,6 @@ pub const Terminal = struct {
 pub const AdvancedTerminal = struct {
     base: Terminal,
     buf: ?[]const u8 = null,
-    //cmds: Commands = .{},
     // mirrored consoles
     mirrors: Mirrors = .{},
     // damage tracking
@@ -247,7 +246,8 @@ pub const AdvancedTerminal = struct {
     // MIRRORING
 
     pub inline fn updateMirrors(self: *Self) void {
-        if (self.damage == null) return;
+        // TODO: implement damage tracking
+        //if (self.damage == null) return;
 
         const src = &self.base.buffer;
 
@@ -257,11 +257,6 @@ pub const AdvancedTerminal = struct {
 
             var dst_offset: usize = 0;
             var src_offset: usize = 0;
-
-            if (true) { // testing
-                @memset(dst.buf, 0);
-                continue;
-            }
 
             if (src.sameEncoding(dst)) {
                 // fast path for same encoder
@@ -305,8 +300,8 @@ pub const AdvancedTerminal = struct {
 
         // initial copy
 
-        const src = self.base.buffer;
-        const dst = old_buf;
+        const src = old_buf;
+        const dst = self.base.buffer;
 
         std.debug.assert(src.mode.height == dst.mode.height);
         std.debug.assert(src.mode.width == dst.mode.width);

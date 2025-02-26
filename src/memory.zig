@@ -6,8 +6,6 @@
 //! Despite that, the implementation is far from simple. I've tried my best
 //! to provide ample documentation but I'm happy to add more if needed.
 
-pub const UsedSet = @import("memory/UsedSet.zig");
-
 const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
@@ -17,8 +15,6 @@ const limine = @import("limine.zig");
 
 const log = @import("log.zig");
 const logger = log.Logger{ .name = "memory" };
-
-const Lock = @import("util.zig").Lock;
 
 // MATH UTILITIES
 
@@ -34,20 +30,69 @@ pub inline fn pagesNeeded(bytes: usize) usize {
     return (bytes + (page_size - 1)) / page_size;
 }
 
-// MEMORY DIRECTORY
+// REGION STRUCTURE
+
+pub const Ptr = [*]align(page_size) [page_size]u8;
+pub const Block = []align(page_size) [page_size]u8;
 
 pub const Region = struct {
-    ptr: [*][page_size]u8,
-    // per-region locking for responsiveness
-    // gives cores more chances to get a lock
-    lock: Lock = .{},
+    const UsedSet = @import("memory/UsedSet.zig");
+    const Lock = @import("util.zig").Lock;
+
+    ptr: Ptr,
     set: UsedSet,
+    lock: Lock = .{},
+
+    const Self = @This();
+
+    comptime {
+        // let's keep things small.
+        assert(@sizeOf(Self) <= 48);
+    }
+
+    // OPERATIONS
+
+    pub fn allocBlock(self: *Self, n: usize) ?Ptr {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        if (self.set.claimRange(n)) |index| {
+            const ptr = self.ptr + index;
+            return ptr;
+        } else return null;
+    }
+
+    pub fn resizeBlock(self: *Self, block: Block, new_len: usize, comptime may_move: bool) ?Ptr {
+        assert(@intFromPtr(block.ptr) >= @intFromPtr(self.ptr));
+
+        if (new_len <= block.len) return block.ptr;
+
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        const start = block.ptr - self.ptr;
+        const resized = self.set.resizeRange(start, block.len, new_len);
+        if (resized) return block.ptr;
+        if (!may_move) return null;
+
+        self.set.unclaimRange(start, block.len);
+        const new_start = self.set.claimRange(new_len) orelse return null;
+        const new_block = self.ptr + new_start;
+        @memcpy(new_block[0..block.len], block);
+        return new_block;
+    }
+
+    pub fn freeBlock(self: *Self, block: [][page_size]u8) void {
+        assert(@intFromPtr(block.ptr) >= @intFromPtr(self.ptr));
+
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self.set.unclaimRange(block.ptr - self.ptr, block.len);
+    }
 };
 
-comptime {
-    // let's keep things small.
-    assert(@sizeOf(Region) <= 48);
-}
+// MEMORY DIRECTORY
 
 // we use a single page to store all region data
 // can hold up to like 85 regions at the moment
@@ -104,7 +149,7 @@ pub inline fn init() void {
 
         const pages = entry.len / page_size;
         var region = Region{
-            .ptr = @ptrCast(entry.ptr),
+            .ptr = @ptrCast(@alignCast(entry.ptr)),
             .set = .{ .ptr = b, .len = pages },
         };
 
@@ -155,10 +200,6 @@ pub inline fn init() void {
 
 // REGION UTILITIES
 
-// do we wipe pages on allocation?
-// TODO: compilation option for zeroing
-const zero = false;
-
 pub inline fn used() usize {
     var sum: usize = 0;
     for (regions) |region|
@@ -173,7 +214,7 @@ pub inline fn unused() usize {
 
 // search in regions until we find one containing an existing block
 // may return null if no regions contain the block (rare but possible)
-inline fn findBlockRegion(block: [][page_size]u8) ?*Region {
+inline fn findBlockRegion(block: Block) ?*Region {
     const addr = @intFromPtr(block.ptr);
     for (0..regions.len) |i| {
         const region = &regions[i];
@@ -186,97 +227,32 @@ inline fn findBlockRegion(block: [][page_size]u8) ?*Region {
         const start = @intFromPtr(region.ptr);
         const end = start + (region.set.len * page_size);
 
-        if (start <= addr and addr < end)
+        if (addr >= start and addr < end)
             return region;
     }
 
     return null;
 }
 
-// ALLOCATION
+// OPERATIONS
 
-pub fn allocBlockInRegion(region: *Region, n: usize) ?[*][page_size]u8 {
-    region.lock.lock();
-    defer region.lock.unlock();
-
-    if (@call(
-        .always_inline,
-        UsedSet.claimRange,
-        .{ &region.set, n },
-    )) |index| {
-        const ptr = region.ptr + index;
-        if (zero) for (0..n) |i|
-            std.crypto.secureZero(u8, ptr[i]);
-
-        return ptr;
-    } else return null;
-}
-
-pub fn allocBlock(n: usize) ?[*][page_size]u8 {
+pub fn allocBlock(n: usize) ?Ptr {
     for (regions) |*region| {
-        const block = @call(
-            .always_inline,
-            allocBlockInRegion,
-            .{ region, n },
-        );
-
-        if (block) |ptr| return ptr;
+        if (region.allocBlock(n)) |ptr| return ptr;
     }
 
     return null;
 }
 
-// REALLOCATION / RESIZING
-
-pub fn resizeBlockInRegion(
-    region: *Region,
-    block: [][page_size]u8,
-    new_size: usize,
-    comptime may_realloc: bool,
-) ?[][page_size]u8 {
-    assert(@intFromPtr(block.ptr) >= @intFromPtr(region.ptr));
-
-    if (new_size <= block.len) return block.ptr[0..new_size];
-
-    region.lock.lock();
-    defer region.lock.unlock();
-
-    const start = block.ptr - region.ptr;
-    const resized = @call(
-        .always_inline,
-        UsedSet.resizeRange,
-        .{ &region.set, start, block.len, new_size },
-    );
-
-    if (resized) return block.ptr[0..new_size];
-    if (!may_realloc) return null;
-
-    region.set.unclaimRange(start, block.len);
-    const new_start = region.set.claimRange(new_size) orelse return null;
-    const new_block = region.ptr + new_start;
-    @memcpy(new_block[0..block.len], block);
-    return new_block[0..new_size];
-}
-
-pub fn resizeBlock(block: [][page_size]u8, new_size: usize, comptime may_realloc: bool) ?[][page_size]u8 {
-    if (block.len == new_size) return block;
+pub fn resizeBlock(block: Block, new_len: usize, comptime may_move: bool) ?Ptr {
+    if (new_len <= block.len) return block.ptr;
     const region = findBlockRegion(block) orelse return null;
-    return @call(.always_inline, resizeBlockInRegion, .{ region, block, new_size, may_realloc });
+    return region.resizeBlock(block, new_len, may_move);
 }
 
-// DEALLOCATION
-
-pub fn freeBlockInRegion(region: *Region, block: [][page_size]u8) void {
-    assert(@intFromPtr(block.ptr) >= @intFromPtr(region.ptr));
-    region.lock.lock();
-    defer region.lock.unlock();
-
-    @call(.always_inline, UsedSet.unclaimRange, .{ &region.set, block.ptr - region.ptr, block.len });
-}
-
-pub fn freeBlock(block: [][page_size]u8) bool {
+pub fn freeBlock(block: Block) bool {
     const region = findBlockRegion(block) orelse return false;
-    @call(.always_inline, freeBlockInRegion, .{ region, block });
+    region.freeBlock(block);
     return true;
 }
 
@@ -293,53 +269,33 @@ pub const PageAllocator = struct {
         .free = free,
     };
 
-    fn alloc(_: *anyopaque, n: usize, _: Alignment, ret_addr: usize) ?[*]u8 {
-        _ = ret_addr;
-
+    fn alloc(_: *anyopaque, n: usize, _: Alignment, _: usize) ?[*]u8 {
         assert(n > 0);
-        if (n > maxInt(usize) - (page_size - 1)) return null;
+        if (n >= maxInt(usize) - page_size) return null;
         const block = allocBlock(pagesNeeded(n));
         return @ptrCast(block orelse return null);
     }
 
-    inline fn resizeInner(buf: []u8, new_size: usize, comptime may_realloc: bool) ?[*]u8 {
-        const old_len = pagesNeeded(buf.len);
-        const new_len = pagesNeeded(new_size);
-
-        const ptr: [*][page_size]u8 = @ptrCast(buf.ptr);
-        const block = @call(.always_inline, resizeBlock, .{ ptr[0..old_len], new_len, may_realloc });
+    inline fn realloc(buf: []u8, new_len: usize, comptime may_move: bool) ?[*]u8 {
+        const ptr: Ptr = @ptrCast(@alignCast(buf.ptr));
+        const old_pages = pagesNeeded(buf.len);
+        const new_pages = pagesNeeded(new_len);
+        const block = resizeBlock(ptr[0..old_pages], new_pages, may_move);
         return @ptrCast(block orelse return null);
     }
 
-    fn resize(
-        _: *anyopaque,
-        buf: []u8,
-        _: Alignment,
-        new_size: usize,
-        ret_addr: usize,
-    ) bool {
-        _ = ret_addr;
-
-        return resizeInner(buf, new_size, false) != null;
+    fn resize(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) bool {
+        return realloc(buf, new_len, false) != null;
     }
 
-    fn remap(
-        _: *anyopaque,
-        buf: []u8,
-        _: Alignment,
-        new_size: usize,
-        ret_addr: usize,
-    ) ?[*]u8 {
-        _ = ret_addr;
-
-        return resizeInner(buf, new_size, true);
+    fn remap(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) ?[*]u8 {
+        return realloc(buf, new_len, true);
     }
 
-    fn free(_: *anyopaque, slice: []u8, _: Alignment, ret_addr: usize) void {
-        _ = ret_addr;
-
-        const ptr: [*][page_size]u8 = @ptrCast(slice.ptr);
+    fn free(_: *anyopaque, slice: []u8, _: Alignment, _: usize) void {
+        const ptr: Ptr = @ptrCast(@alignCast(slice.ptr));
         const pages = pagesNeeded(slice.len);
+        // TODO: handle invalid frees
         _ = freeBlock(ptr[0..pages]);
     }
 };
