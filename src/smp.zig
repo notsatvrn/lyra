@@ -3,7 +3,7 @@ const limine = @import("limine.zig");
 const memory = @import("memory.zig");
 
 const log = @import("log.zig");
-const logger = log.Logger{ .name = "cpus" };
+const logger = log.Logger{ .name = "smp" };
 
 // INITIALIZATION
 
@@ -18,7 +18,6 @@ pub fn init() !void {
     try arch.prepCPUs(cpus.count);
     arch.setCPU(0);
 
-    logger.debug("launch cpus", .{});
     for (0..cpus.count) |i| {
         const cpu = cpus.cpus[i];
         cpu.extra = i;

@@ -4,7 +4,7 @@ const limine = @import("limine.zig");
 const arch = @import("arch.zig");
 const memory = @import("memory.zig");
 const pci = @import("pci.zig");
-const cpus = @import("cpus.zig");
+const smp = @import("smp.zig");
 
 const gfx = @import("gfx.zig");
 const tty = @import("tty.zig");
@@ -53,11 +53,11 @@ export fn _start() callconv(.c) noreturn {
     logger.info("doing fb extended setup", .{});
     fbExtendedSetup();
 
-    // build pci device tree and bring up cpus
+    // build pci device tree and bring up other cpus
 
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
-    cpus.init() catch |e| log.panic(null, "cpu init failed: {}", .{e});
+    smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
 
     logger.info("no work left to do, halting", .{});
 

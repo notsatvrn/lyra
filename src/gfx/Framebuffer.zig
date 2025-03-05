@@ -50,7 +50,7 @@ const Encoding = struct {
 
 const Self = @This();
 
-pub inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
+pub fn init(ptr: [*]u8, mode: *const VideoMode) Self {
     const bytes = (mode.bpp + 7) / 8;
     if (bytes < 2 or bytes > 5)
         unreachable;
@@ -65,7 +65,7 @@ pub inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
 
 // MISC UTILITIES
 
-pub inline fn sameEncoding(self: Self, other: *const Self) bool {
+pub fn sameEncoding(self: Self, other: *const Self) bool {
     if (self.bytes != other.bytes) return false;
 
     inline for (std.meta.fields(Encoding)) |field| {
@@ -79,7 +79,7 @@ pub inline fn sameEncoding(self: Self, other: *const Self) bool {
 
 // WRITING PIXELS
 
-pub inline fn makePixel(self: Self, color: RGB.BPP36) u64 {
+pub fn makePixel(self: Self, color: RGB.BPP36) u64 {
     var r = @as(u64, color.r);
     var g = @as(u64, color.g);
     var b = @as(u64, color.b);
@@ -146,7 +146,7 @@ pub inline fn clear(self: Self) void {
 
 // READING PIXELS
 
-pub inline fn readColor(self: Self, pos: usize) RGB.BPP36 {
+pub fn readColor(self: Self, pos: usize) RGB.BPP36 {
     var pixel: u64 = 0;
 
     switch (self.bytes) {

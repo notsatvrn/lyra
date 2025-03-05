@@ -39,13 +39,39 @@ inline fn pit_handler(_: *int.InterruptStack) void {
     pit_ints += 1;
 }
 
+fn pitTimerReading() usize {
+    var counter: usize = 0;
+
+    // warmup reading
+    const pi_cold = pit_ints;
+    while (pi_cold == pit_ints) io.delay();
+    // first reading
+    const pi_first = pit_ints;
+    while (pi_first == pit_ints) {
+        counter += 1;
+        std.mem.doNotOptimizeAway(counter);
+    }
+    const start = rdtsc();
+    // second reading
+    const pi_second = pit_ints;
+    while (pi_second == pit_ints) {
+        counter += 1;
+        std.mem.doNotOptimizeAway(counter);
+    }
+    const end = rdtsc();
+
+    return end - start;
+}
+
 // https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
-pub fn setupTimingFast(hz: usize) void {
+pub inline fn setupTimingFast(comptime hz: usize) void {
     logger.debug("fast pit timing setup", .{});
 
     // setup PIT
     const hz_f: f64 = @floatFromInt(hz);
-    const divisor: u16 = @intFromFloat(1193182.0 / hz_f);
+    const div_f = 1193182.0 / hz_f;
+    const div_round = @round(div_f);
+    const divisor: u16 = @intFromFloat(div_round);
     io.out(u8, 0x43, 0b00110100);
     io.out(u8, 0x40, @truncate(divisor));
     io.out(u8, 0x40, @truncate(divisor >> 8));
@@ -57,14 +83,25 @@ pub fn setupTimingFast(hz: usize) void {
     int.registerIRQ(0, pit_handler);
     // unmask IRQ0
     int.maskIRQ(0, false);
-    // first reading
-    const pi_first = pit_ints;
-    while (pi_first == pit_ints) io.delay();
-    const start = rdtsc();
-    // second reading
-    const pi_second = pit_ints;
-    while (pi_second == pit_ints) io.delay();
-    const end = rdtsc();
+
+    // reread until the difference is tiny
+    var cycles = pitTimerReading();
+    while (true) {
+        const second = pitTimerReading();
+
+        const first_f: f64 = @floatFromInt(cycles);
+        const second_f: f64 = @floatFromInt(second);
+        const avg = (first_f + second_f) / 2.0;
+
+        const diff = @abs(first_f - second_f) / avg;
+        if (diff < 0.005) {
+            // difference was less than 0.5%
+            // use the average of the results
+            cycles = @intFromFloat(@round(avg));
+            break;
+        } else cycles = second;
+    }
+
     // disable interrupts
     util.disablePICInterrupts();
     util.disableInterrupts();
@@ -73,12 +110,15 @@ pub fn setupTimingFast(hz: usize) void {
     // unregister handler
     int.registerIRQ(0, null);
 
-    const cycles: f64 = @floatFromInt(end - start);
-    const speed = cycles / (10 * 1000 * 1000);
+    const cycles_f: f64 = @floatFromInt(cycles);
+    const speed = cycles_f / (1000000000 / hz);
     setCPUSpeed(speed);
 }
 
 // REAL TIME CLOCK
+
+const cmos_addr = 0x70;
+const cmos_data = 0x71;
 
 const RTCOutput = packed struct(u48) {
     second: u8,
@@ -87,28 +127,22 @@ const RTCOutput = packed struct(u48) {
     day: u8,
     month: u8,
     year: u8,
-
-    pub inline fn eql(lhs: RTCOutput, rhs: RTCOutput) bool {
-        const lint: u48 = @bitCast(lhs);
-        const rint: u48 = @bitCast(rhs);
-        return lint == rint;
-    }
 };
 
 // get RTC output but don't fix values
 fn rawRTC() RTCOutput {
-    io.out(u8, 0x70, 0x00);
-    const sec = io.in(u8, 0x71);
-    io.out(u8, 0x70, 0x02);
-    const min = io.in(u8, 0x71);
-    io.out(u8, 0x70, 0x04);
-    const hr = io.in(u8, 0x71);
-    io.out(u8, 0x70, 0x07);
-    const day = io.in(u8, 0x71);
-    io.out(u8, 0x70, 0x08);
-    const mon = io.in(u8, 0x71);
-    io.out(u8, 0x70, 0x09);
-    const yr = io.in(u8, 0x71);
+    io.out(u8, cmos_addr, 0x00);
+    const sec = io.in(u8, cmos_data);
+    io.out(u8, cmos_addr, 0x02);
+    const min = io.in(u8, cmos_data);
+    io.out(u8, cmos_addr, 0x04);
+    const hr = io.in(u8, cmos_data);
+    io.out(u8, cmos_addr, 0x07);
+    const day = io.in(u8, cmos_data);
+    io.out(u8, cmos_addr, 0x08);
+    const mon = io.in(u8, cmos_data);
+    io.out(u8, cmos_addr, 0x09);
+    const yr = io.in(u8, cmos_data);
 
     return .{
         .second = sec,
@@ -157,20 +191,32 @@ fn fixRawRTC(o: RTCOutput) RTCOutput {
     };
 }
 
+inline fn isRTCUpdating() bool {
+    io.out(u8, cmos_addr, 0x0A);
+    return (io.in(u8, cmos_data) & 0x80) != 0;
+}
+
 // get RTC output safely as unix timestamp (in seconds)
 pub fn readRTC() u64 {
-    // loop until we aren't in the middle of an update
+    // make sure we aren't in the middle of an update
 
-    var current = rawRTC();
-    while (!current.eql(rawRTC()))
-        current = rawRTC();
+    while (isRTCUpdating()) {}
+    var reading = rawRTC();
 
-    current = fixRawRTC(current);
+    while (true) {
+        while (isRTCUpdating()) {}
+        const second = rawRTC();
+        if (reading != second) {
+            reading = second;
+        } else break;
+    }
+
+    reading = fixRawRTC(reading);
 
     // days from 1/1/1970 to 1/1/2000 + day of the month
     // TODO: also subtracting 1 for some reason WHY
-    var days = 10957 + @as(u64, current.day) - 1;
-    const year = @as(u64, current.year) + 2000;
+    var days = 10957 + @as(u64, reading.day) - 1;
+    const year = @as(u64, reading.year) + 2000;
 
     // days from past years
     for (2000..year) |y| {
@@ -182,10 +228,10 @@ pub fn readRTC() u64 {
     // days from past months this year
     var month_days: [12]u8 = .{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
     if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) month_days[1] = 29;
-    for (0..current.month - 1) |m| days += month_days[m];
+    for (0..reading.month - 1) |m| days += month_days[m];
 
     // convert to seconds, then return
-    return days * 86400 + @as(u64, current.hour) * 3600 + @as(u64, current.minute) * 60 + @as(u64, current.second);
+    return days * 86400 + @as(u64, reading.hour) * 3600 + @as(u64, reading.minute) * 60 + @as(u64, reading.second);
 }
 
 // uses RTC to check how long it thinks a second is
@@ -195,11 +241,11 @@ pub fn setupTimingSlow() void {
 
     // first reading
     const time_first = rawRTC();
-    while (rawRTC().eql(time_first)) {}
+    while (rawRTC() == time_first) {}
     const start = rdtsc();
     // second reading
     const time_second = rawRTC();
-    while (rawRTC().eql(time_second)) {}
+    while (rawRTC() == time_second) {}
     const end = rdtsc();
 
     const cycles: f64 = @floatFromInt(end - start);

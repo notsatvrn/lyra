@@ -340,7 +340,7 @@ pub const AdvancedTerminal = struct {
 
     pub inline fn clear(self: *Self) void {
         self.base.clear();
-        self.damage = .{
+        if (self.mirrors.items.len > 0) self.damage = .{
             .min = .{ 0, 0 },
             .max = .{
                 self.base.info.cols * 16 * self.base.buffer.bytes,

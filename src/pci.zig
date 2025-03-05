@@ -19,13 +19,13 @@ pub const Devices = TreeMap(DeviceLocation, DeviceInfo, cmpLoc, .avl);
 pub var devices = Devices{};
 
 pub inline fn detect() !void {
-    logger.info("detecting pci devices", .{});
+    logger.info("detecting devices", .{});
     try @import("arch.zig").pciDetect();
 }
 
 pub inline fn print() !void {
     var iterator = devices.iterator();
-    logger.info("pci devices:", .{});
+    logger.info("devices:", .{});
 
     while (try iterator.next()) |device| {
         logger.info("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {s}", .{
