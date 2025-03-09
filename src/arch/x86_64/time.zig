@@ -33,56 +33,52 @@ pub inline fn rdtsc() u64 {
 // PROGRAMMABLE INTERVAL TIMER
 // https://wiki.osdev.org/Programmable_Interval_Timer
 
+var last_reading: usize = 0;
 var pit_ints: usize = 0;
+const pit_int_goal = 8;
 
 inline fn pit_handler(_: *int.InterruptStack) void {
+    last_reading = rdtsc();
     pit_ints += 1;
 }
 
 fn pitTimerReading() usize {
-    var counter: usize = 0;
-
-    // warmup reading
-    const pi_cold = pit_ints;
-    while (pi_cold == pit_ints) io.delay();
-    // first reading
+    // first reading - short
     const pi_first = pit_ints;
-    while (pi_first == pit_ints) {
-        counter += 1;
-        std.mem.doNotOptimizeAway(counter);
-    }
-    const start = rdtsc();
-    // second reading
-    const pi_second = pit_ints;
-    while (pi_second == pit_ints) {
-        counter += 1;
-        std.mem.doNotOptimizeAway(counter);
-    }
-    const end = rdtsc();
+    while (pit_ints == pi_first)
+        std.atomic.spinLoopHint();
+    const start = last_reading;
 
-    return end - start;
+    // second reading - long
+    const pi_goal = pit_ints + pit_int_goal;
+    var counter: usize = 0;
+    while (pit_ints < pi_goal) {
+        counter += 1;
+        std.mem.doNotOptimizeAway(counter);
+    }
+    const end = last_reading;
+
+    return (end - start) / pit_int_goal;
 }
 
+const pit_divisor = 29102; // largest factor of 1193182 thats <= 65535
+const pit_hz: comptime_float = 1193182 / pit_divisor;
+const cycle_goal = 0.005; // consistency goal of 0.5%
+
 // https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
-pub inline fn setupTimingFast(comptime hz: usize) void {
+pub inline fn setupTimingFast() void {
     logger.debug("fast pit timing setup", .{});
 
     // setup PIT
-    const hz_f: f64 = @floatFromInt(hz);
-    const div_f = 1193182.0 / hz_f;
-    const div_round = @round(div_f);
-    const divisor: u16 = @intFromFloat(div_round);
     io.out(u8, 0x43, 0b00110100);
-    io.out(u8, 0x40, @truncate(divisor));
-    io.out(u8, 0x40, @truncate(divisor >> 8));
+    io.out(u8, 0x40, @truncate(pit_divisor));
+    io.out(u8, 0x40, @truncate(pit_divisor >> 8));
 
     // enable interrupts
     util.enableInterrupts();
     util.enablePICInterrupts();
     // register handler
-    int.registerIRQ(0, pit_handler);
-    // unmask IRQ0
-    int.maskIRQ(0, false);
+    int.registerIRQ(0, pit_handler, false);
 
     // reread until the difference is tiny
     var cycles = pitTimerReading();
@@ -92,10 +88,10 @@ pub inline fn setupTimingFast(comptime hz: usize) void {
         const first_f: f64 = @floatFromInt(cycles);
         const second_f: f64 = @floatFromInt(second);
         const avg = (first_f + second_f) / 2.0;
+        const diff = @abs(first_f - second_f);
 
-        const diff = @abs(first_f - second_f) / avg;
-        if (diff < 0.005) {
-            // difference was less than 0.5%
+        if (diff / avg < cycle_goal) {
+            // difference reached our goal
             // use the average of the results
             cycles = @intFromFloat(@round(avg));
             break;
@@ -105,13 +101,11 @@ pub inline fn setupTimingFast(comptime hz: usize) void {
     // disable interrupts
     util.disablePICInterrupts();
     util.disableInterrupts();
-    // remask IRQ0
-    int.maskIRQ(0, true);
     // unregister handler
-    int.registerIRQ(0, null);
+    int.registerIRQ(0, null, false);
 
     const cycles_f: f64 = @floatFromInt(cycles);
-    const speed = cycles_f / (1000000000 / hz);
+    const speed = cycles_f / (1000000000.0 / pit_hz);
     setCPUSpeed(speed);
 }
 
@@ -250,7 +244,7 @@ pub fn setupTimingSlow() void {
 
     const cycles: f64 = @floatFromInt(end - start);
     // cycles will be a tiny bit too high so adjust
-    const speed = (cycles * 0.999999995) / std.time.ns_per_s;
+    const speed = (cycles * 0.9999995) / std.time.ns_per_s;
     setCPUSpeed(speed);
 }
 

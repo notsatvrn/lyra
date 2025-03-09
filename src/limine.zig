@@ -155,6 +155,14 @@ pub const HHDMResponse = extern struct {
     offset: u64,
 };
 
+pub inline fn convertPointer(ptr: anytype) @TypeOf(ptr) {
+    if (@typeInfo(@TypeOf(ptr)) != .pointer)
+        @compileError("convertPointer called on non-pointer type");
+
+    const addr = @intFromPtr(ptr) | hhdm.response.offset;
+    return @ptrFromInt(addr);
+}
+
 // SMBIOS
 
 pub export var smbios linksection(".requests") = SMBIOSRequest{};
@@ -169,6 +177,59 @@ pub const SMBIOSResponse = extern struct {
     revision: u64,
     entry_32: *const void,
     entry_64: *const void,
+};
+
+// EFI SYSTEM TABLE
+
+pub export var efi_system_table linksection(".requests") = EFISystemTableRequest{};
+
+pub const EFISystemTableRequest = extern struct {
+    id: [4]u64 = common_magic ++ .{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc },
+    revision: u64 = 0,
+    response: *const EFISystemTableResponse = undefined,
+};
+
+pub const EFISystemTableResponse = extern struct {
+    revision: u64,
+    ptr: *std.os.uefi.tables.SystemTable,
+};
+
+// EFI MEMORY MAP
+
+const EFIMemoryDesc = std.os.uefi.tables.MemoryDescriptor;
+
+pub export var efi_memory_map linksection(".requests") = EFIMemoryMapRequest{};
+
+pub const EFIMemoryMapRequest = extern struct {
+    id: [4]u64 = common_magic ++ .{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 },
+    revision: u64 = 0,
+    response: *const EFIMemoryMapResponse = undefined,
+};
+
+pub const EFIMemoryMapResponse = extern struct {
+    revision: u64,
+    memmap: u64,
+    memmap_size: u64,
+    desc_size: u64,
+    desc_version: u64,
+};
+
+pub const EFIMemoryMapIterator = struct {
+    addr: u64 = 0,
+
+    pub fn next(self: *EFIMemoryMapIterator) ?*EFIMemoryDesc {
+        if (self.addr >= (efi_memory_map.response.memmap +
+            efi_memory_map.response.memmap_size))
+        {
+            return null;
+        } else if (self.addr == 0) {
+            self.addr = efi_memory_map.response.memmap;
+        }
+
+        const desc: *EFIMemoryDesc = @ptrFromInt(self.addr);
+        self.addr += efi_memory_map.response.desc_size;
+        return desc;
+    }
 };
 
 // KERNEL FILE

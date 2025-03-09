@@ -42,28 +42,45 @@ export fn _start() callconv(.c) noreturn {
 
     tty.out.clear();
 
-    // initial setup + memory
-
     arch.boot.setup();
     arch.paging.saveTable();
     memory.init();
-
-    // now we have memory, bring up more framebuffers and init double-buffering
-
-    logger.info("doing fb extended setup", .{});
     fbExtendedSetup();
-
-    // build pci device tree and bring up other cpus
-
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
 
-    logger.info("no work left to do, halting", .{});
-
-    tty.sync();
-
     arch.halt();
+}
+
+// WIP
+fn efiStuff() void {
+    std.os.uefi.system_table = limine.efi_system_table.response.ptr;
+    std.os.uefi.system_table.runtime_services = limine.convertPointer(std.os.uefi.system_table.runtime_services);
+    std.os.uefi.system_table.runtime_services.resetSystem = limine.convertPointer(std.os.uefi.system_table.runtime_services.resetSystem);
+    std.os.uefi.system_table.runtime_services.setVirtualAddressMap = limine.convertPointer(std.os.uefi.system_table.runtime_services.setVirtualAddressMap);
+
+    const efi_mmap = limine.efi_memory_map.response;
+    const map_size = efi_mmap.memmap_size / efi_mmap.desc_size;
+
+    const map = memory.allocator.alloc(std.os.uefi.tables.MemoryDescriptor, map_size) catch log.panic(null, "failed to allocate new efi virtual map", .{});
+
+    var efi_mmap_iter = limine.EFIMemoryMapIterator{};
+    var index: usize = 0;
+    while (efi_mmap_iter.next()) |desc| {
+        map[index] = desc.*;
+        map[index].virtual_start = map[index].physical_start | limine.hhdm.response.offset;
+        index += 1;
+    }
+
+    _ = std.os.uefi.system_table.runtime_services.setVirtualAddressMap(map_size, @sizeOf(std.os.uefi.tables.MemoryDescriptor), @intCast(limine.efi_memory_map.response.desc_version), map.ptr);
+
+    for (0..5) |i| {
+        logger.info("resetting in {}", .{5 - i});
+        arch.time.stall(std.time.ns_per_s);
+    }
+
+    std.os.uefi.system_table.runtime_services.resetSystem(.reset_shutdown, .success, 0, null);
 }
 
 inline fn fbExtendedSetup() void {

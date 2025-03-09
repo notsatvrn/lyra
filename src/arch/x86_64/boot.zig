@@ -33,7 +33,7 @@ pub inline fn setup() void {
     logger.info("remap pic", .{});
     int.remapPIC(32, 40);
     logger.info("setup timing", .{});
-    time.setupTimingFast(25);
+    time.setupTimingFast();
     logger.info("setup clock", .{});
     time.setupClock(time.readRTC());
 }

@@ -195,7 +195,7 @@ pub const Terminal = struct {
     inline fn scroll(self: *Self) void {
         if (self.cmd != null) {
             self.cmd = .scroll;
-            return;
+            //return;
         }
 
         const line_size = self.buffer.mode.pitch * 16;

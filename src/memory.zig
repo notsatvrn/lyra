@@ -118,8 +118,7 @@ pub inline fn init() void {
 
         // put the address in Limine's higher-half direct map
         // absolutely required, if we don't do this writes cause crashes
-        const addr = @intFromPtr(entry.ptr) +| limine.hhdm.response.offset;
-        entry.ptr = @ptrFromInt(addr);
+        entry.ptr = limine.convertPointer(entry.ptr);
 
         // find the largest region and put region info at the start
         if (entry.len > largest.len) largest = entry.ptr[0..entry.len];

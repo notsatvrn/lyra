@@ -146,23 +146,26 @@ pub inline fn register(n: u8, handler: ?Handler) void {
     handlers[n] = if (handler) |h| &h else unhandled;
 }
 
-/// Build a wrapper to provide masking during execution and EOI afterwards.
-inline fn wrapIRQ(handler: IRQHandler) Handler {
-    return struct {
-        fn wrapped(stack: *InterruptStack) callconv(.c) void {
+// Build a wrapper to provide masking during execution (if needed) and EOI afterwards.
+inline fn wrapIRQ(handler: IRQHandler, comptime mask: bool) Handler {
+    const wrappers = struct {
+        fn wrappedMasking(stack: *InterruptStack) callconv(.c) void {
             const i: u4 = @truncate(stack.interrupt_number - IRQ_0);
             maskIRQ(i, true);
             handler(stack);
             maskIRQ(i, false);
-
-            if (i >= 8) {
-                // Signal to the secondary PIC.
-                io.out(u8, PIC2_CMD, EOI);
-            }
-            // Signal to the primary PIC.
-            io.out(u8, PIC1_CMD, EOI);
+            signalPIC(i);
         }
-    }.wrapped;
+
+        // non-masking version for timers and such
+        // masking before handling introduces inconsistency
+        fn wrapped(stack: *InterruptStack) callconv(.c) void {
+            handler(stack);
+            signalPIC(@truncate(stack.interrupt_number - IRQ_0));
+        }
+    };
+
+    return if (mask) wrappers.wrappedMasking else wrappers.wrapped;
 }
 
 /// Register an IRQ handler.
@@ -170,9 +173,15 @@ inline fn wrapIRQ(handler: IRQHandler) Handler {
 /// Parameters:
 ///     irq: Index of the IRQ.
 ///     handler: IRQ handler.
-pub fn registerIRQ(irq: u4, handler: ?IRQHandler) void {
-    handlers[IRQ_0 + @as(u8, irq)] = if (handler) |h| wrapIRQ(h) else unhandled;
-    if (handler != null) maskIRQ(irq, false); // Unmask the IRQ.
+///     mask: Mask during execution?
+pub fn registerIRQ(irq: u4, handler: ?IRQHandler, comptime mask: bool) void {
+    if (handler) |h| {
+        handlers[IRQ_0 + @as(u8, irq)] = wrapIRQ(h, mask);
+        maskIRQ(irq, false);
+    } else {
+        maskIRQ(irq, true);
+        handlers[IRQ_0 + @as(u8, irq)] = unhandled;
+    }
 }
 
 /// Mask/unmask an IRQ.
@@ -192,4 +201,14 @@ pub fn maskIRQ(irq: u4, mask: bool) void {
     } else {
         io.out(u8, port, old & ~(@as(u8, 1) << shift));
     }
+}
+
+// Tells the PIC that our interrupt is done.
+inline fn signalPIC(irq: u4) void {
+    if (irq >= 8) {
+        // Signal to the secondary PIC.
+        io.out(u8, PIC2_CMD, EOI);
+    }
+    // Signal to the primary PIC.
+    io.out(u8, PIC1_CMD, EOI);
 }
