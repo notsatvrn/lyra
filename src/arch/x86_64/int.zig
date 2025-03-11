@@ -9,6 +9,7 @@ pub const isr = @import("int/isr.zig");
 pub const InterruptStack = isr.InterruptStack;
 
 const log = @import("../../log.zig");
+const util = @import("util.zig");
 const io = @import("io.zig");
 
 // PROGRAMMABLE INTERRUPT CONTROLLER
@@ -35,22 +36,22 @@ pub inline fn remapPIC(offset1: u8, offset2: u8) void {
     const a2 = io.in(u8, PIC2_DATA);
 
     io.out(u8, PIC1_CMD, ICW1_INIT | ICW1_ICW4); // starts the initialization sequence (in cascade mode)
-    io.delay();
+    util.delay();
     io.out(u8, PIC2_CMD, ICW1_INIT | ICW1_ICW4);
-    io.delay();
+    util.delay();
     io.out(u8, PIC1_DATA, offset1); // ICW2: Primary PIC vector offset
-    io.delay();
+    util.delay();
     io.out(u8, PIC2_DATA, offset2); // ICW2: Secondary PIC vector offset
-    io.delay();
+    util.delay();
     io.out(u8, PIC1_DATA, 4); // ICW3: tell Primary PIC that there is a secondary PIC at IRQ2 (0000 0100)
-    io.delay();
+    util.delay();
     io.out(u8, PIC2_DATA, 2); // ICW3: tell Secondary PIC its cascade identity (0000 0010)
-    io.delay();
+    util.delay();
 
     io.out(u8, PIC1_DATA, ICW4_8086); // ICW4: have the PICs use 8086 mode (and not 8080 mode)
-    io.delay();
+    util.delay();
     io.out(u8, PIC2_DATA, ICW4_8086);
-    io.delay();
+    util.delay();
 
     io.out(u8, PIC1_DATA, a1); // restore saved masks.
     io.out(u8, PIC2_DATA, a2);

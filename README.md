@@ -5,7 +5,7 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
 ## Goals
 
 - Readable and easy to understand codebase
-- Minimalist design with microkernel model
+- Multi-architecture support (x86, RISC-V, ARM)
 - Modern design with [Limine](https://github.com/limine-bootloader/limine) boot protocol
 
 ## Non-goals

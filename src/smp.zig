@@ -79,8 +79,7 @@ pub fn LocalStorage(comptime T: type) type {
 
 pub fn LockingStorage(comptime T: type) type {
     return struct {
-        const util = @import("util.zig");
-        const Lock = util.SpinLock;
+        const Lock = @import("util/lock.zig").SpinLock;
 
         allocator: Allocator,
         objects: []Entry,

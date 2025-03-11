@@ -1,4 +1,4 @@
-OUTPUT_FORMAT(elf64-x86-64)
+OUTPUT_FORMAT(elf64-littleaarch64)
 
 ENTRY(_start)
 

@@ -92,6 +92,6 @@ pub inline fn clear(self: *Self) void {
     self.pos = 0;
 }
 
-inline fn updateCursor(self: Self) void {
+inline fn updateCursor(self: *const Self) void {
     @import("../arch.zig").updateTextModeCursor(self);
 }

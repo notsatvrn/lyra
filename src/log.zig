@@ -7,7 +7,7 @@ pub const ANSI = tty.effects.ANSI;
 
 const arch = @import("arch.zig");
 const nanoSinceBoot = arch.time.nanoSinceBoot;
-const Lock = @import("util.zig").Lock;
+const Lock = @import("util/lock.zig").Lock;
 
 var lock = Lock{};
 

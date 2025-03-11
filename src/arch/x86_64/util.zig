@@ -15,16 +15,16 @@ pub export fn halt() noreturn {
 
 pub inline fn disablePICInterrupts() void {
     io.out(u8, 0xA1, 0xFF);
-    io.delay();
+    delay();
     io.out(u8, 0x21, 0xFB);
-    io.delay();
+    delay();
 }
 
 pub inline fn enablePICInterrupts() void {
     io.out(u8, 0xA1, 0xFF);
-    io.delay();
+    delay();
     io.out(u8, 0x21, 0xFB);
-    io.delay();
+    delay();
 }
 
 pub inline fn disableInterrupts() void {
@@ -37,4 +37,8 @@ pub inline fn enableInterrupts() void {
     asm volatile ("sti");
     //io.out(u8, 0x70, io.in(u8, 0x70) | 0x80);
     //_ = io.in(u8, 0x71);
+}
+
+pub inline fn delay() void {
+    io.out(u8, 0x80, 0);
 }

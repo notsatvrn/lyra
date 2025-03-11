@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const util = @import("../util.zig");
+const lock = @import("../util/lock.zig");
 
 pub const Config = struct {
     /// Whether to synchronize usage of this allocator.
@@ -170,7 +170,7 @@ pub fn BinnedAllocator(comptime config: Config) type {
         }
 
         const Mutex = if (config.thread_safe)
-            util.SpinLock
+            lock.SpinLock
         else
             struct {
                 fn lock(_: @This()) void {}

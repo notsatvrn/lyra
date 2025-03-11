@@ -37,7 +37,7 @@ pub const Block = []align(page_size) [page_size]u8;
 
 pub const Region = struct {
     const UsedSet = @import("memory/UsedSet.zig");
-    const Lock = @import("util.zig").Lock;
+    const Lock = @import("util/lock.zig").Lock;
 
     ptr: Ptr,
     set: UsedSet,

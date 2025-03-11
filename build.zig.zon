@@ -1,6 +1,7 @@
 .{
-    .name = "lyra",
+    .name = .lyra,
     .version = "0.0.0",
+    .fingerprint = 0x2c288ec2669c1edf,
     .dependencies = .{
         .cpuid = .{
             .url = "git+https://codeberg.org/zig-multimedia/cpuid#cc78ddcf965f5da4c7e508cab8d6aba907b7d4ed",

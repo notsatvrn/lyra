@@ -1,4 +1,4 @@
-OUTPUT_FORMAT(elf64-x86-64)
+OUTPUT_FORMAT(elf64-littleriscv)
 
 ENTRY(_start)
 
@@ -36,9 +36,11 @@ SECTIONS
 
   .data : {
     *(.data .data.*)
+    *(.sdata .sdata.*)
   } :data
 
   .bss : {
+    *(.sbss .sbss.*)
     *(.bss .bss.*)
     *(COMMON)
   } :data

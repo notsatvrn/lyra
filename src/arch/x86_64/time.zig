@@ -9,12 +9,6 @@ const logger = log.Logger{ .name = "x86-64/time" };
 
 // TIME STAMP COUNTER
 
-// TSC multiplier is the reciprocal of the processor speed
-// floating point multiplication is faster than division
-var tsc_multi: f64 = 0;
-pub var cpu_speed: f64 = 0;
-pub var tsc_init: u64 = 0;
-
 pub inline fn rdtsc() u64 {
     var lo: u32 = 0;
     var hi: u32 = 0;
@@ -62,7 +56,7 @@ fn pitTimerReading() usize {
 }
 
 const pit_divisor = 29102; // largest factor of 1193182 thats <= 65535
-const pit_hz: comptime_float = 1193182 / pit_divisor;
+const pit_hz = 1193182 / pit_divisor; // divisor is factor, will be int
 const cycle_goal = 0.005; // consistency goal of 0.5%
 
 // https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
@@ -85,15 +79,17 @@ pub inline fn setupTimingFast() void {
     while (true) {
         const second = pitTimerReading();
 
-        const first_f: f64 = @floatFromInt(cycles);
-        const second_f: f64 = @floatFromInt(second);
-        const avg = (first_f + second_f) / 2.0;
-        const diff = @abs(first_f - second_f);
+        const avg = @divFloor(cycles + second, 2);
+        const first_i: isize = @intCast(cycles);
+        const second_i: isize = @intCast(second);
+        const diff = @abs(first_i - second_i);
 
-        if (diff / avg < cycle_goal) {
+        const avg_f: f64 = @floatFromInt(avg);
+        const diff_f: f64 = @floatFromInt(diff);
+        if (diff_f / avg_f < cycle_goal) {
             // difference reached our goal
             // use the average of the results
-            cycles = @intFromFloat(@round(avg));
+            cycles = avg;
             break;
         } else cycles = second;
     }
@@ -104,9 +100,7 @@ pub inline fn setupTimingFast() void {
     // unregister handler
     int.registerIRQ(0, null, false);
 
-    const cycles_f: f64 = @floatFromInt(cycles);
-    const speed = cycles_f / (1000000000.0 / pit_hz);
-    setCPUSpeed(speed);
+    setCPUSpeed(cycles * pit_hz);
 }
 
 // REAL TIME CLOCK
@@ -242,10 +236,7 @@ pub fn setupTimingSlow() void {
     while (rawRTC() == time_second) {}
     const end = rdtsc();
 
-    const cycles: f64 = @floatFromInt(end - start);
-    // cycles will be a tiny bit too high so adjust
-    const speed = (cycles * 0.9999995) / std.time.ns_per_s;
-    setCPUSpeed(speed);
+    setCPUSpeed(end - start);
 }
 
 // SYSTEM CLOCK
@@ -268,34 +259,39 @@ pub inline fn setupClock(base: u64) void {
 
 // TIMING HELPERS
 
-inline fn setCPUSpeed(speed: f64) void {
-    cpu_speed = speed;
-    tsc_multi = 1 / speed;
+pub var cpu_speed: u64 = 0;
+pub var tsc_init: u64 = 0;
 
-    logger.debug("estimated cpu speed: {d:.3}MHz", .{cpu_speed * 1000});
+inline fn setCPUSpeed(speed: u64) void {
+    cpu_speed = speed;
+
+    logger.debug("estimated cpu speed: {}MHz", .{cpu_speed / std.time.ns_per_ms});
     // cycles per microsecond for stall power consumption hack
     us_cycles = cyclesPerNanos(std.time.ns_per_us);
 }
 
+inline fn nanoSinceCycle(cycle: u64) u64 {
+    const tsc_diff = @as(u128, rdtsc() - cycle) * std.time.ns_per_s;
+    return @truncate(tsc_diff / @as(u128, cpu_speed));
+}
+
 // get nanoseconds since we first read TSC
-pub inline fn nanoSinceBoot() u64 {
+pub fn nanoSinceBoot() u64 {
     if (cpu_speed == 0) return 0;
-    const tsc_diff: f64 = @floatFromInt(rdtsc() - tsc_init);
-    return @intFromFloat(tsc_diff * tsc_multi);
+    return nanoSinceCycle(tsc_init);
 }
 
 // get the current unix timestamp in ns
-pub inline fn timestamp() u64 {
+pub fn timestamp() u64 {
     if (clock_state) |state| {
-        const tsc_diff: f64 = @floatFromInt(rdtsc() - state.tsc_init);
-        const tsc_ns: u64 = @intFromFloat(tsc_diff * tsc_multi);
-        return (tsc_ns / std.time.ns_per_s) + state.base_init;
+        const ns = nanoSinceCycle(state.tsc_init);
+        return (ns / std.time.ns_per_s) + state.base_init;
     } else return 0;
 }
 
 inline fn cyclesPerNanos(n: usize) usize {
-    const cycles = @as(f64, @floatFromInt(n)) * cpu_speed;
-    return @intFromFloat(cycles);
+    const attos = @as(u128, n) * @as(u128, cpu_speed);
+    return @truncate(attos / std.time.ns_per_s);
 }
 
 var us_cycles: usize = 0;

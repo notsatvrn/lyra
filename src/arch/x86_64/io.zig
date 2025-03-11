@@ -1,4 +1,8 @@
-pub inline fn in(comptime T: type, port: u16) T {
+// I/O implementation on x86-64 (legacy port-mapped I/O)
+
+pub const Port = u16;
+
+pub inline fn in(comptime T: type, port: Port) T {
     return switch (T) {
         u8 => asm volatile ("inb %[port], %[result]"
             : [result] "={al}" (-> u8),
@@ -16,18 +20,30 @@ pub inline fn in(comptime T: type, port: u16) T {
     };
 }
 
-pub inline fn insl(port: u16, addr: anytype, cnt: usize) void {
-    asm volatile ("cld; repne; insl;"
+pub inline fn ins(comptime T: type, port: Port, len: usize) [len]T {
+    var data: [len]T = undefined;
+    const addr = @intFromPtr(&data);
+
+    const suffix = switch (T) {
+        u8 => "b",
+        u16 => "w",
+        u32 => "l",
+        else => @compileError("invalid type (must be u8, u16, u32)"),
+    };
+
+    asm volatile ("cld; repne; ins" ++ suffix ++ ";"
         : [addr] "={edi}" (addr),
-          [cnt] "={ecx}" (cnt),
+          [len] "={ecx}" (len),
         : [port] "{dx}" (port),
           [addr] "0" (addr),
-          [cnt] "1" (cnt),
+          [len] "1" (len),
         : "memory", "cc"
     );
+
+    return data;
 }
 
-pub inline fn out(comptime T: type, port: u16, value: T) void {
+pub inline fn out(comptime T: type, port: Port, value: T) void {
     switch (T) {
         u8 => asm volatile ("outb %[value], %[port]"
             :
@@ -125,8 +141,4 @@ pub inline fn setRegister(comptime T: type, comptime reg: []const u8, value: T) 
         ),
         else => @compileError("invalid type (must be u8, u16, u32, u64)"),
     }
-}
-
-pub inline fn delay() void {
-    out(u8, 0x80, 0);
 }

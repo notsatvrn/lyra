@@ -5,8 +5,6 @@ const FeatureSet = Target.Cpu.Feature.Set;
 pub fn build(b: *std.Build) void {
     const arch = b.standardTargetOptions(.{}).result.cpu.arch;
 
-    if (arch != .x86_64) @panic("Only x86-64 is supported at this time.");
-
     const features = switch (arch) {
         .x86_64 => x86_64: {
             const Feature = Target.x86.Feature;
@@ -27,7 +25,8 @@ pub fn build(b: *std.Build) void {
 
             break :x86_64 .{ features_add, features_sub };
         },
-        else => unreachable,
+        .aarch64, .riscv64 => .{ FeatureSet.empty, FeatureSet.empty },
+        else => @panic("Unsupported architecture. Only 64-bit x86, RISC-V, and ARM are supported."),
     };
 
     const target = b.resolveTargetQuery(.{
@@ -65,15 +64,17 @@ pub fn build(b: *std.Build) void {
 
     switch (arch) {
         .x86_64 => {
-            kernel.addAssemblyFile(b.path("src/arch/x86_64/int/isr_stubs.s"));
             kernel.setLinkerScript(b.path("src/arch/x86_64/linker.ld"));
+            kernel.addAssemblyFile(b.path("src/arch/x86_64/int/isr_stubs.s"));
 
             if (b.lazyDependency("cpuid", .{})) |cpuid| {
                 const module = cpuid.module("cpuid");
                 kernel.root_module.addImport("cpuid", module);
             }
         },
-        else => unreachable,
+        inline else => |a| {
+            kernel.setLinkerScript(b.path("src/arch/" ++ @tagName(a) ++ "/linker.ld"));
+        },
     }
 
     b.installArtifact(kernel);

@@ -2,6 +2,7 @@ pub const boot = @import("x86_64/boot.zig");
 pub const util = @import("x86_64/util.zig");
 pub const time = @import("x86_64/time.zig");
 pub const paging = @import("x86_64/paging.zig");
+pub const io = @import("x86_64/io.zig");
 
 // VGA TEXT MODE STUFF
 
@@ -9,10 +10,9 @@ pub inline fn textModeAddr() usize {
     return 0xB8000;
 }
 
-const io = @import("x86_64/io.zig");
 const TextMode = @import("../tty/TextMode.zig");
 
-pub inline fn updateTextModeCursor(state: TextMode) void {
+pub inline fn updateTextModeCursor(state: *const TextMode) void {
     if (!state.cursor) return;
 
     io.out(u8, 0x3D4, 0x0F);
