@@ -5,6 +5,7 @@ const arch = @import("arch.zig");
 const memory = @import("memory.zig");
 const pci = @import("pci.zig");
 const smp = @import("smp.zig");
+const time = @import("time.zig");
 
 const gfx = @import("gfx.zig");
 const tty = @import("tty.zig");
@@ -12,6 +13,8 @@ const log = @import("log.zig");
 const logger = log.Logger{ .name = "main" };
 
 // ENTRYPOINT
+
+var tty_init_tm: tty.TextMode = undefined;
 
 export fn _start() callconv(.c) noreturn {
     arch.boot.init();
@@ -21,8 +24,10 @@ export fn _start() callconv(.c) noreturn {
     const framebuffers = limine.fb.response;
 
     if (framebuffers.count == 0) {
-        const addr = arch.textModeAddr();
-        tty.out = tty.Output.initTextMode(addr);
+        if (arch.text_mode) |tm| {
+            tty_init_tm = tty.TextMode.initAddr(tm.address());
+            tty.generic = tty_init_tm.generic();
+        }
     } else {
         // start logging to the smallest framebuffer
         // when we bring up more, they'll mirror this one
@@ -37,13 +42,14 @@ export fn _start() callconv(.c) noreturn {
         }
 
         const mode = smallest.defaultVideoMode();
-        tty.out = tty.Output.initRawFB(smallest.ptr, &mode);
+        tty.framebuffer = tty.Framebuffer.init(smallest.ptr, &mode);
     }
 
-    tty.out.clear();
+    tty.clear();
 
     arch.boot.setup();
     arch.paging.saveTable();
+    time.setup();
     memory.init();
     fbExtendedSetup();
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
@@ -89,18 +95,18 @@ inline fn fbExtendedSetup() void {
 
     // set current framebuffer to mirror a virtual framebuffer (double-buffering)
 
-    const smallest = tty.out.rawfb;
+    const smallest = tty.framebuffer.?.basic;
     const s_buffer = smallest.buffer;
 
     var mode = s_buffer.mode.*;
     mode.pitch = mode.width * s_buffer.bytes;
-    var new_out = tty.Output.initVirtFB(&mode) catch return;
+    var new_fb = tty.Framebuffer.initVirtual(&mode) catch return;
 
-    new_out.virtfb.base.render = smallest.render;
-    new_out.virtfb.base.cursor = smallest.cursor;
-    new_out.virtfb.initMirroring(s_buffer) catch return;
+    new_fb.advanced.base.render = smallest.render;
+    new_fb.advanced.base.cursor = smallest.cursor;
+    new_fb.advanced.initMirroring(s_buffer) catch return;
 
-    defer tty.out = new_out;
+    defer tty.framebuffer = new_fb;
 
     // add additional mirrors
 
@@ -110,7 +116,7 @@ inline fn fbExtendedSetup() void {
         const new = framebuffers.entries[i];
         const new_mode = new.defaultVideoMode();
         const new_buffer = gfx.Framebuffer.init(new.ptr, &new_mode);
-        new_out.virtfb.addMirror(new_buffer) catch break;
+        new_fb.advanced.addMirror(new_buffer) catch break;
     }
 }
 

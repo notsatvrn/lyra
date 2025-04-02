@@ -7,8 +7,8 @@ pub const Features = struct {
 
     pml5: bool,
     tsc: bool,
-    // "invariant" TSC
-    nonstop_tsc: bool,
+    invariant_tsc: bool,
+    hypervisor: bool,
 
     // SSE & FPU
     osxsave: bool,
@@ -94,6 +94,9 @@ inline fn parseVendor(int: u96) Vendor {
     };
 }
 
+var model_ints: [12]u32 = @splat(0);
+pub var model: []const u8 = "";
+
 // PARSE CPUID
 
 pub fn identify() void {
@@ -102,6 +105,8 @@ pub fn identify() void {
     // TODO: use our own CPUID parser
     const cpuid = @import("cpuid").Features.get();
 
+    // miscellaneous
+    features.hypervisor = cpuid.basic.ecx.hypervisor;
     features.pml5 = cpuid.extended_0.ecx.la57;
     features.tsc = cpuid.basic.edx.tsc;
     // SSE & FPU features
@@ -127,20 +132,33 @@ pub fn identify() void {
     features.avx512vaes = cpuid.extended_0.ecx.vaes;
     features.avx512vpclmulqdq = cpuid.extended_0.ecx.vpclmulqdq;
 
+    const max_extended = blk: {
+        var eax: u32 = 0x80000000;
+        var ebx: u32 = 0;
+        var ecx: u32 = 0;
+        var edx: u32 = 0;
+        asm volatile ("cpuid"
+            : [_] "={edx}" (edx),
+              [_] "={ecx}" (ecx),
+              [_] "={ebx}" (ebx),
+              [_] "={eax}" (eax),
+        );
+        break :blk eax;
+    };
+
+    _ = max_extended; // qemu cpuid implementation just doesnt work with this for whatever reason
+
     if (features.tsc) {
         // https://github.com/dterei/tsc/
-        features.nonstop_tsc = asm (
+        features.invariant_tsc = asm (
             \\.intel_syntax noprefix
             \\
             \\mov eax, 0x80000007
             \\cpuid
             \\mov eax, 1
             \\test edx, 1 << 8
-            \\jz noNonStopTSC
-            \\test edx, 1 << 9
             \\jnz endNonStopTSC
             \\
-            \\noNonStopTSC:
             \\xor eax, eax
             \\endNonStopTSC:
             \\
@@ -183,7 +201,7 @@ pub fn identify() void {
 
     // FIXME: #UD on some systems
     if (false and features.avx) {
-        //https://osdev.wiki/wiki/SSE#AVX_2
+        // https://osdev.wiki/wiki/SSE#AVX_2
         asm volatile (
             \\.intel_syntax noprefix
             \\
@@ -209,9 +227,55 @@ pub fn identify() void {
         : "={eax}"
     );
 
-    vendor = parseVendor(
-        @as(u96, ebx) << 64 |
-            @as(u96, edx) << 32 |
-            @as(u96, ecx),
+    const value = @as(u96, ecx) << 64 |
+        @as(u96, edx) << 32 |
+        @as(u96, ebx);
+
+    vendor = parseVendor(value);
+
+    // read CPU model string
+
+    var eax1: u32 = 0x80000002;
+    var ebx1: u32 = 0;
+    var ecx1: u32 = 0;
+    var edx1: u32 = 0;
+    asm volatile ("cpuid"
+        : [_] "={edx}" (edx1),
+          [_] "={ecx}" (ecx1),
+          [_] "={ebx}" (ebx1),
+          [_] "={eax}" (eax1),
     );
+
+    var eax2: u32 = 0x80000003;
+    var ebx2: u32 = 0;
+    var ecx2: u32 = 0;
+    var edx2: u32 = 0;
+    asm volatile ("cpuid"
+        : [_] "={edx}" (edx2),
+          [_] "={ecx}" (ecx2),
+          [_] "={ebx}" (ebx2),
+          [_] "={eax}" (eax2),
+    );
+
+    var eax3: u32 = 0x80000004;
+    var ebx3: u32 = 0;
+    var ecx3: u32 = 0;
+    var edx3: u32 = 0;
+    asm volatile ("cpuid"
+        : [_] "={edx}" (edx3),
+          [_] "={ecx}" (ecx3),
+          [_] "={ebx}" (ebx3),
+          [_] "={eax}" (eax3),
+    );
+
+    model_ints = .{ eax1, ebx1, ecx1, edx1, eax2, ebx2, ecx2, edx2, eax3, ebx3, ecx3, edx3 };
+    model = @ptrCast(model_ints[0..12]);
+    if (false) {
+        for (0..model.len) |i| {
+            if (model[i] == 0) {
+                model = model[0..i];
+                break;
+            }
+        }
+    }
 }

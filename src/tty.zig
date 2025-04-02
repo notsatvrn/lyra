@@ -1,7 +1,10 @@
 const std = @import("std");
 
+const arch = @import("arch.zig");
+
 pub const TextMode = @import("tty/TextMode.zig");
 const fb = @import("tty/framebuffer.zig");
+pub const Framebuffer = fb.AnyTerminal;
 
 pub const colors = @import("tty/colors.zig");
 pub const Color = colors.Color;
@@ -15,102 +18,90 @@ const ANSI = effects.ANSI;
 const limine = @import("limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
 
-pub var out: Output = undefined;
+// OUTPUTS
+
+pub var framebuffer: ?Framebuffer = null;
+pub var generic: ?Generic = null;
 var render = RenderState.init();
 
-pub const OutputType = enum { text_mode, rawfb, virtfb };
-pub const Output = union(OutputType) {
-    text_mode: TextMode,
-    rawfb: fb.Terminal,
-    virtfb: fb.AdvancedTerminal,
+pub const Generic = struct {
+    ptr: *anyopaque,
+    vtable: VTable,
+
+    pub const VTable = struct {
+        print: *const fn (*anyopaque, []const u8) void,
+        clear: *const fn (*anyopaque) void,
+    };
+};
+
+// BASICS
+
+pub inline fn print(string: []const u8) void {
+    if (framebuffer) |*term| term.print(string);
+    if (generic) |*term| term.vtable.print(term.ptr, string);
+}
+
+pub inline fn clear() void {
+    if (framebuffer) |*term| term.clear();
+    if (generic) |*term| term.vtable.clear(term.ptr);
+}
+
+pub inline fn sync() void {
+    if (framebuffer) |*term| term.sync();
+}
+
+// FORMATTING
+
+fn write(_: *const void, bytes: []const u8) error{}!usize {
+    print(bytes);
+    return bytes.len;
+}
+
+pub const Writer = std.io.Writer(*const void, error{}, write);
+
+pub inline fn writer() Writer {
+    return .{ .context = undefined };
+}
+
+pub inline fn printf(comptime fmt: []const u8, args: anytype) void {
+    writer().print(fmt, args) catch unreachable;
+}
+
+// RENDER STATE
+
+pub var render_ansi = false;
+
+// The ANSI escape parser used by all TTY implementations
+pub const ANSIParser = struct {
+    parsing: ?Parsing = null,
+    nop: bool = false,
 
     const Self = @This();
 
-    // INITIALIZATION
+    const Parsing = struct {
+        nop: bool = false,
+    };
 
-    pub fn initTextMode(addr: usize) Output {
-        return .{ .text_mode = TextMode.initAddr(addr) };
-    }
+    pub fn checkChar(self: *Self, char: u8) bool {
+        // TODO: for now it's always a nop, but we need a parser
+        if (self.parsing) |p| {
+            _ = p;
+            if (self.nop) {
+                switch (char) {
+                    'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'f' | 'G' | 'H' | 'h' | 'i' | 'J' | 'K' | 'l' | 'm' | 'n' | 'S' | 's' | 'T' | 'u' => self.parsing = null,
+                    else => {},
+                }
+            }
+        } else if (char == ANSI.esc) {
+            self.parsing = .{ .nop = self.nop or !render_ansi };
+        } else return false;
 
-    pub fn initRawFB(ptr: [*]u8, mode: *const VideoMode) Output {
-        return .{ .rawfb = fb.Terminal.init(ptr, mode) };
-    }
-
-    pub fn initVirtFB(mode: *const VideoMode) !Output {
-        return .{ .virtfb = try fb.AdvancedTerminal.initVirtual(mode) };
-    }
-
-    // BASIC OPERATIONS
-
-    fn put(self: *Self, char: u8) void {
-        if (switch (self.*) {
-            inline .text_mode => false,
-            inline .rawfb => |*buf| buf.render.checkChar(char),
-            inline .virtfb => |*buf| buf.base.render.checkChar(char),
-        }) return;
-
-        switch (char) {
-            '\n' => {
-                self.cursor.row += 1;
-                self.cursor.col = 0;
-                if (self.cursor.row >= self.info.rows)
-                    self.scroll();
-            },
-            // BS / DEL
-            '\x08', '\x7F' => {
-                if (self.cursor.col > 0) {
-                    self.cursor.col -= 1;
-                } else if (self.cursor.row > 0) {
-                    self.cursor.row -= 1;
-                    self.cursor.col = self.info.cols - 1;
-                } else return;
-                self.put(' ');
-            },
-            else => self.writeChar(char),
-        }
-    }
-
-    //pub inline fn print(self: *Self, string: []const u8) void {
-    //    for (string) |c| self.put(c);
-    //}
-
-    pub inline fn print(self: *Self, string: []const u8) void {
-        switch (self.*) {
-            inline else => |*v| v.print(string),
-        }
-    }
-
-    pub fn clear(self: *Self) void {
-        switch (self.*) {
-            inline else => |*v| v.clear(),
-        }
-    }
-
-    // FORMATTING
-
-    fn write(self: *Self, bytes: []const u8) error{}!usize {
-        self.print(bytes);
-        return bytes.len;
-    }
-
-    pub const Writer = std.io.Writer(*Self, error{}, write);
-
-    pub inline fn writer(self: *Self) Writer {
-        return .{ .context = self };
-    }
-
-    pub inline fn printf(self: *Self, comptime fmt: []const u8, args: anytype) void {
-        self.writer().print(fmt, args) catch unreachable;
+        return true;
     }
 };
 
-pub inline fn sync() void {
-    if (out == .virtfb)
-        out.virtfb.updateMirrors();
-}
-
 // The current rendering state of the tty.
-// Handles colors, effects, and ANSI escape sequences.
+// Handles colors, effects, and ANSI escapes.
 pub const RenderState = struct {
     // zig fmt: off
     foreground_color : Color = .{ .basic = .light_gray },
@@ -120,7 +111,7 @@ pub const RenderState = struct {
     effects  : Effects  = .{},
     palettes : Palettes = .{},
 
-    parsing : ?Parsing = null,
+    ansi_parser : ANSIParser = .{},
     // zig fmt: on
 
     const Self = @This();
@@ -133,21 +124,8 @@ pub const RenderState = struct {
         return s;
     }
 
-    pub fn checkChar(self: *Self, char: u8) bool {
-        // do nothing for now
-        // TODO: introduce ANSI escape code parser
-        if (self.parsing) |p| {
-            _ = p;
-
-            switch (char) {
-                'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'f' | 'G' | 'H' | 'h' | 'i' | 'J' | 'K' | 'l' | 'm' | 'n' | 'S' | 's' | 'T' | 'u' => self.parsing = null,
-                else => {},
-            }
-        } else if (char == ANSI.esc) {
-            self.parsing = .{};
-        } else return false;
-
-        return true;
+    pub inline fn checkChar(self: *Self, char: u8) bool {
+        return self.ansi_parser.checkChar(char);
     }
 
     pub inline fn getColor(

@@ -237,7 +237,7 @@ pub const AdvancedTerminal = struct {
         return self;
     }
 
-    pub inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
+    inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
         var self = Self{ .base = Terminal.init(ptr, mode) };
         self.base.cmd = .scroll;
         return self;
@@ -245,7 +245,7 @@ pub const AdvancedTerminal = struct {
 
     // MIRRORING
 
-    pub inline fn updateMirrors(self: *Self) void {
+    pub inline fn sync(self: *Self) void {
         // TODO: implement damage tracking
         //if (self.damage == null) return;
 
@@ -347,5 +347,40 @@ pub const AdvancedTerminal = struct {
                 self.base.info.rows * 8,
             },
         };
+    }
+};
+
+// GENERIC TERMINAL INTERFACE
+
+pub const AnyTerminal = union(enum) {
+    advanced: AdvancedTerminal,
+    basic: Terminal,
+
+    const Self = @This();
+
+    pub inline fn initVirtual(mode: *const VideoMode) !Self {
+        return .{ .advanced = try AdvancedTerminal.initVirtual(mode) };
+    }
+
+    pub inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
+        return .{ .basic = Terminal.init(ptr, mode) };
+    }
+
+    pub inline fn print(self: *Self, string: []const u8) void {
+        switch (self.*) {
+            .advanced => |*t| t.print(string),
+            .basic => |*t| t.print(string),
+        }
+    }
+
+    pub inline fn clear(self: *Self) void {
+        switch (self.*) {
+            .advanced => |*t| t.clear(),
+            .basic => |*t| t.clear(),
+        }
+    }
+
+    pub inline fn sync(self: *Self) void {
+        if (self.* == .advanced) self.advanced.sync();
     }
 };

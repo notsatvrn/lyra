@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const pci = @import("../../pci.zig");
-const DeviceLocation = pci.DeviceLocation;
 const Class = pci.Class;
 
 const io = @import("io.zig");
@@ -16,10 +15,10 @@ const logger = log.Logger{ .name = "x86-64/pci" };
 const CONFIG_ADDRESS = 0xCF8;
 const CONFIG_DATA = 0xCFC;
 
-pub inline fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
+pub inline fn configRead(comptime T: type, location: pci.DeviceLocation, offset: u8) T {
     const ConfigAddress = packed struct(u32) {
         offset: u8,
-        location: DeviceLocation,
+        location: pci.DeviceLocation,
         reserved: u7 = 0,
         enable: bool,
     };
@@ -47,7 +46,7 @@ pub inline fn detect() !void {
 fn detectBus(bus: u8) !void {
     slots: for (0..32) |slot| {
         for (0..8) |func| {
-            const location = DeviceLocation{
+            const location = pci.DeviceLocation{
                 .func = @truncate(func),
                 .slot = @truncate(slot),
                 .bus = bus,
@@ -70,7 +69,8 @@ fn detectBus(bus: u8) !void {
                 continue;
             };
 
-            try pci.devices.put(location, .{ .vendor = vendor, .device = device, .class = class });
+            const desc = pci.DeviceDescriptor{ .vendor = vendor, .device = device };
+            try pci.devices.put(location, .{ .desc = desc, .class = class });
 
             const header_type = configRead(u8, location, 14);
 

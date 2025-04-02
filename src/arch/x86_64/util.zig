@@ -1,13 +1,13 @@
 const std = @import("std");
-
 const io = @import("io.zig");
-
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "x86-64/util" };
 
 // BASIC UTILITIES
 
-pub export fn halt() noreturn {
+pub inline fn wfi() void {
+    asm volatile ("hlt");
+}
+
+pub fn halt() noreturn {
     @branchHint(.cold);
     disableInterrupts();
     while (true) asm volatile ("hlt");
@@ -41,4 +41,85 @@ pub inline fn enableInterrupts() void {
 
 pub inline fn delay() void {
     io.out(u8, 0x80, 0);
+}
+
+// REGISTER UTILITIES
+
+pub inline fn readRegister(comptime T: type, comptime reg: []const u8, addr: usize) T {
+    return switch (T) {
+        u8 => asm volatile ("mov %" ++ reg ++ ":%[addr], %[out]"
+            : [out] "=q" (-> u8),
+            : [addr] "m" (addr),
+        ),
+        u16 => asm volatile ("mov %" ++ reg ++ ":%[addr], %[out]"
+            : [out] "=r" (-> u16),
+            : [addr] "m" (addr),
+        ),
+        u32 => asm volatile ("mov %" ++ reg ++ ":%[addr], %[out]"
+            : [out] "=r" (-> u32),
+            : [addr] "m" (addr),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32)"),
+    };
+}
+
+pub inline fn writeRegister(comptime T: type, comptime reg: []const u8, addr: usize, value: T) void {
+    switch (T) {
+        u8 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
+            :
+            : [addr] "+m" (addr),
+              [value] "qi" (value),
+        ),
+        u16 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
+            :
+            : [addr] "+m" (addr),
+              [value] "ri" (value),
+        ),
+        u32 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
+            :
+            : [addr] "+m" (addr),
+              [value] "ri" (value),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32)"),
+    }
+}
+
+pub inline fn getRegister(comptime T: type, comptime reg: []const u8) T {
+    return switch (T) {
+        u8 => asm volatile ("mov %" ++ reg ++ ", %[out]"
+            : [out] "=q" (-> u8),
+        ),
+        u16 => asm volatile ("mov %" ++ reg ++ ", %[out]"
+            : [out] "=r" (-> u16),
+        ),
+        u32 => asm volatile ("mov %" ++ reg ++ ", %[out]"
+            : [out] "=r" (-> u32),
+        ),
+        u64 => asm volatile ("mov %" ++ reg ++ ", %[out]"
+            : [out] "=r" (-> u64),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32, u64)"),
+    };
+}
+
+pub inline fn setRegister(comptime T: type, comptime reg: []const u8, value: T) void {
+    switch (T) {
+        u8 => asm volatile ("mov %[value], %" ++ reg
+            :
+            : [value] "qi" (value),
+        ),
+        u16 => asm volatile ("mov %[value], %" ++ reg
+            :
+            : [value] "ri" (value),
+        ),
+        u32 => asm volatile ("mov %[value], %" ++ reg
+            :
+            : [value] "ri" (value),
+        ),
+        u64 => asm volatile ("mov %[value], %" ++ reg
+            :
+            : [value] "ri" (value),
+        ),
+        else => @compileError("invalid type (must be u8, u16, u32, u64)"),
+    }
 }

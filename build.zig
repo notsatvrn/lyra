@@ -37,18 +37,22 @@ pub fn build(b: *std.Build) void {
         .cpu_features_sub = features[1],
     });
 
-    // Create the kernel executable.
-    const kernel = b.addExecutable(.{
+    // Options for the kernel executable.
+    var exe_options = std.Build.ExecutableOptions{
         .name = "lyra",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = b.standardOptimizeOption(.{}),
-        .strip = true, // Reduce binary size.
-        .code_model = .kernel, // Higher half kernel.
+        .strip = true,
         .linkage = .static, // Disable dynamic linking.
         .pic = false, // Disable position independent code.
         .omit_frame_pointer = false, // Needed for stack traces.
-    });
+    };
+
+    if (arch == .x86_64) exe_options.code_model = .kernel; // Higher half kernel.
+
+    // Create the kernel executable.
+    const kernel = b.addExecutable(exe_options);
 
     // Disable features that are problematic in kernel space.
     kernel.root_module.red_zone = false;
@@ -74,6 +78,11 @@ pub fn build(b: *std.Build) void {
         },
         inline else => |a| {
             kernel.setLinkerScript(b.path("src/arch/" ++ @tagName(a) ++ "/linker.ld"));
+
+            if (b.lazyDependency("dtb", .{})) |dtb| {
+                const module = dtb.module("dtb");
+                kernel.root_module.addImport("dtb", module);
+            }
         },
     }
 

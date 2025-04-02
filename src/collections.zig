@@ -1,13 +1,13 @@
 //! A set of collections, mainly based on trees.
 
-const RBTree = @import("trees/rb.zig").RBTree;
-const AVLTree = @import("trees/avl.zig").AVLTree;
+const RBTree = @import("util/trees/rb.zig").RBTree;
+const AVLTree = @import("util/trees/avl.zig").AVLTree;
 
 const std = @import("std");
 const Order = std.math.Order;
 
 const memory = @import("memory.zig");
-const Lock = @import("util/lock.zig").Lock;
+const Lock = @import("util/lock.zig").SharedLock;
 
 // TREE
 
@@ -188,5 +188,23 @@ pub fn TreeMap(
         }
 
         pub const Iterator = TreeT.Iterator;
+    };
+}
+
+// MULTI HASH MAP
+
+pub fn AutoMultiHashMap(comptime K: type, comptime V: type) type {
+    return MultiHashMap(K, V, std.hash_map.AutoContext(K), std.hash_map.default_max_load_percentage);
+}
+
+pub fn StringMultiHashMap(comptime T: type) type {
+    return MultiHashMap([]const u8, T, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
+}
+
+pub fn MultiHashMap(comptime K: type, comptime V: type, comptime Context: type, comptime max_load_percentage: u64) type {
+    const Map = std.HashMapUnmanaged(K, std.ArrayListUnmanaged(V), Context, max_load_percentage);
+
+    return struct {
+        inner: Map,
     };
 }

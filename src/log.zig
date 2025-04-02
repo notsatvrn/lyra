@@ -6,7 +6,7 @@ pub const colors = tty.colors;
 pub const ANSI = tty.effects.ANSI;
 
 const arch = @import("arch.zig");
-const nanoSinceBoot = arch.time.nanoSinceBoot;
+const nanoSinceBoot = @import("time.zig").nanoSinceBoot;
 const Lock = @import("util/lock.zig").Lock;
 
 var lock = Lock{};
@@ -14,7 +14,7 @@ var lock = Lock{};
 // BASIC PRINTING / WRITER
 
 fn write(_: void, bytes: []const u8) error{}!usize {
-    nosuspend tty.out.print(bytes);
+    tty.print(bytes);
     return bytes.len;
 }
 

@@ -8,7 +8,8 @@ const logger = log.Logger{ .name = "pci" };
 // DEVICES
 
 pub const DeviceLocation = packed struct(u16) { func: u3, slot: u5, bus: u8 };
-pub const DeviceInfo = struct { vendor: u16, device: u16, class: Class };
+pub const DeviceDescriptor = packed struct(u32) { vendor: u16, device: u16 };
+pub const DeviceInfo = struct { desc: DeviceDescriptor, class: Class };
 
 fn cmpLoc(a: DeviceLocation, b: DeviceLocation) std.math.Order {
     return std.math.order(@as(u16, @bitCast(a)), @as(u16, @bitCast(b)));
@@ -32,8 +33,8 @@ pub inline fn print() !void {
             device.key.bus,
             device.key.slot,
             device.key.func,
-            device.value.vendor,
-            device.value.device,
+            device.value.desc.vendor,
+            device.value.desc.device,
             device.value.class,
         });
     }

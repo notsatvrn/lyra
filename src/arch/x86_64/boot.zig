@@ -1,5 +1,3 @@
-const std = @import("std");
-
 const limine = @import("../../limine.zig");
 
 const gdt = @import("gdt.zig");
@@ -14,26 +12,18 @@ const logger = log.Logger{ .name = "x86-64/boot" };
 // INITIAL SETUP
 
 pub inline fn init() void {
-    time.tsc_init = time.rdtsc();
     util.disableInterrupts();
+    gdt.init();
+    int.idt.init();
+    int.remapPIC(32, 40);
 }
 
 // FURTHER SETUP WITH LOGGING
 
 pub inline fn setup() void {
-    logger.info("init global descriptor table", .{});
-    gdt.init();
-
-    logger.info("init interrupt descriptor table", .{});
-    int.idt.init();
-
-    logger.info("run cpuid", .{});
+    logger.info("identify processor", .{});
     cpuid.identify();
-
-    logger.info("remap pic", .{});
-    int.remapPIC(32, 40);
-    logger.info("setup timing", .{});
-    time.setupTimingFast();
-    logger.info("setup clock", .{});
-    time.setupClock(time.readRTC());
+    logger.info("- vendor: {s}", .{@tagName(cpuid.vendor)});
+    if (!cpuid.features.invariant_tsc)
+        log.panic(null, "Invariant TSC unavailable!", .{});
 }

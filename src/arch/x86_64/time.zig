@@ -9,7 +9,7 @@ const logger = log.Logger{ .name = "x86-64/time" };
 
 // TIME STAMP COUNTER
 
-pub inline fn rdtsc() u64 {
+pub inline fn counter() u64 {
     var lo: u32 = 0;
     var hi: u32 = 0;
 
@@ -32,7 +32,7 @@ var pit_ints: usize = 0;
 const pit_int_goal = 8;
 
 inline fn pit_handler(_: *int.InterruptStack) void {
-    last_reading = rdtsc();
+    last_reading = counter();
     pit_ints += 1;
 }
 
@@ -45,10 +45,10 @@ fn pitTimerReading() usize {
 
     // second reading - long
     const pi_goal = pit_ints + pit_int_goal;
-    var counter: usize = 0;
+    var tmp: usize = 0;
     while (pit_ints < pi_goal) {
-        counter += 1;
-        std.mem.doNotOptimizeAway(counter);
+        tmp += 1;
+        std.mem.doNotOptimizeAway(tmp);
     }
     const end = last_reading;
 
@@ -60,9 +60,7 @@ const pit_hz = 1193182 / pit_divisor; // divisor is factor, will be int
 const cycle_goal = 0.005; // consistency goal of 0.5%
 
 // https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
-pub inline fn setupTimingFast() void {
-    logger.debug("fast pit timing setup", .{});
-
+pub inline fn counterSpeed() u64 {
     // setup PIT
     io.out(u8, 0x43, 0b00110100);
     io.out(u8, 0x40, @truncate(pit_divisor));
@@ -100,7 +98,9 @@ pub inline fn setupTimingFast() void {
     // unregister handler
     int.registerIRQ(0, null, false);
 
-    setCPUSpeed(cycles * pit_hz);
+    const speed = cycles * pit_hz;
+    logger.debug("estimated cpu speed: {}MHz", .{speed / std.time.ns_per_ms});
+    return speed;
 }
 
 // REAL TIME CLOCK
@@ -185,7 +185,7 @@ inline fn isRTCUpdating() bool {
 }
 
 // get RTC output safely as unix timestamp (in seconds)
-pub fn readRTC() u64 {
+pub fn readSystemClock() u64 {
     // make sure we aren't in the middle of an update
 
     while (isRTCUpdating()) {}
@@ -220,95 +220,4 @@ pub fn readRTC() u64 {
 
     // convert to seconds, then return
     return days * 86400 + @as(u64, reading.hour) * 3600 + @as(u64, reading.minute) * 60 + @as(u64, reading.second);
-}
-
-// uses RTC to check how long it thinks a second is
-// based on how far off it is, adjust speed estimate
-pub fn setupTimingSlow() void {
-    logger.debug("slow rtc timing setup", .{});
-
-    // first reading
-    const time_first = rawRTC();
-    while (rawRTC() == time_first) {}
-    const start = rdtsc();
-    // second reading
-    const time_second = rawRTC();
-    while (rawRTC() == time_second) {}
-    const end = rdtsc();
-
-    setCPUSpeed(end - start);
-}
-
-// SYSTEM CLOCK
-
-// initial Real Time Clock reading + TSC avoids slow/inaccurate RTC reads
-// (tsc_init - current tsc) * 1000 / CPU speed + base_init = current time
-const ClockState = struct {
-    base_init: u64,
-    tsc_init: u64,
-};
-
-var clock_state: ?ClockState = null;
-
-// change the base timestamp
-// useful when we get an NTP reading
-pub inline fn setupClock(base: u64) void {
-    clock_state = .{ .base_init = base, .tsc_init = rdtsc() };
-    logger.debug("timestamp: {}", .{timestamp()});
-}
-
-// TIMING HELPERS
-
-pub var cpu_speed: u64 = 0;
-pub var tsc_init: u64 = 0;
-
-inline fn setCPUSpeed(speed: u64) void {
-    cpu_speed = speed;
-
-    logger.debug("estimated cpu speed: {}MHz", .{cpu_speed / std.time.ns_per_ms});
-    // cycles per microsecond for stall power consumption hack
-    us_cycles = cyclesPerNanos(std.time.ns_per_us);
-}
-
-inline fn nanoSinceCycle(cycle: u64) u64 {
-    const tsc_diff = @as(u128, rdtsc() - cycle) * std.time.ns_per_s;
-    return @truncate(tsc_diff / @as(u128, cpu_speed));
-}
-
-// get nanoseconds since we first read TSC
-pub fn nanoSinceBoot() u64 {
-    if (cpu_speed == 0) return 0;
-    return nanoSinceCycle(tsc_init);
-}
-
-// get the current unix timestamp in ns
-pub fn timestamp() u64 {
-    if (clock_state) |state| {
-        const ns = nanoSinceCycle(state.tsc_init);
-        return (ns / std.time.ns_per_s) + state.base_init;
-    } else return 0;
-}
-
-inline fn cyclesPerNanos(n: usize) usize {
-    const attos = @as(u128, n) * @as(u128, cpu_speed);
-    return @truncate(attos / std.time.ns_per_s);
-}
-
-var us_cycles: usize = 0;
-
-// busy-wait for n nanoseconds
-// ideal for smaller waits
-pub fn stall(n: usize) void {
-    const start = rdtsc();
-    const goal = start + cyclesPerNanos(n);
-
-    // improve power consumption on longer stalls
-    // loop hint should be accurate to a microsec
-    if (n > std.time.ns_per_us) {
-        const ugoal = goal - us_cycles;
-        while (ugoal > rdtsc())
-            std.atomic.spinLoopHint();
-    }
-
-    while (goal > rdtsc()) {}
 }

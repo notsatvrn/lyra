@@ -16,15 +16,24 @@ export const requests_start: [4]u64 linksection(".requests_start") =
 export const requests_end: [2]u64 linksection(".requests_end") =
     .{ 0xadc0e0531bb10d03, 0x9572709f31764c62 };
 
+// REQUEST FORMAT
+
+pub fn Request(comptime magic: [2]u64, comptime Response: type) type {
+    const res_info = @typeInfo(Response);
+    comptime var ResT: type = *const Response;
+    if (res_info == .optional) ResT = ?ResT;
+
+    return extern struct {
+        id: [4]u64 = common_magic ++ magic,
+        revision: u64 = 0,
+        response: ResT = if (res_info == .optional) null else undefined,
+    };
+}
+
 // BOOTLOADER INFO
 
-pub export var bootldr linksection(".requests") = BootloaderInfoRequest{};
-
-pub const BootloaderInfoRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0xf55038d8e2a1202f, 0x279426fcf5f59740 },
-    revision: u64 = 0,
-    response: *const BootloaderInfoResponse = undefined,
-};
+pub export var bootldr linksection(".requests") =
+    Request(.{ 0xf55038d8e2a1202f, 0x279426fcf5f59740 }, BootloaderInfoResponse){};
 
 pub const BootloaderInfoResponse = extern struct {
     revision: u64 = 0,
@@ -38,13 +47,8 @@ pub inline fn bootldrName() []const u8 {
 
 // FRAMEBUFFER
 
-pub export var fb linksection(".requests") = FramebufferRequest{};
-
-pub const FramebufferRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x9d5827dcd881dd75, 0xa3148604f6fab11b },
-    revision: u64 = 0,
-    response: *const FramebufferResponse = undefined,
-};
+pub export var fb linksection(".requests") =
+    Request(.{ 0x9d5827dcd881dd75, 0xa3148604f6fab11b }, FramebufferResponse){};
 
 pub const FramebufferResponse = extern struct {
     revision: u64,
@@ -109,13 +113,8 @@ pub const Framebuffer = extern struct {
 
 // MEMORY MAP
 
-pub export var mmap linksection(".requests") = MMapRequest{};
-
-pub const MMapRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x67cf3d9d378a806f, 0xe304acdfc50c3c62 },
-    revision: u64 = 0,
-    response: *const MMapResponse = undefined,
-};
+pub export var mmap linksection(".requests") =
+    Request(.{ 0x67cf3d9d378a806f, 0xe304acdfc50c3c62 }, MMapResponse){};
 
 pub const MMapResponse = extern struct {
     revision: u64,
@@ -142,13 +141,8 @@ pub const MMapEntry = extern struct {
 
 // HHDM LOCATION
 
-pub export var hhdm linksection(".requests") = HHDMRequest{};
-
-pub const HHDMRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x48dcf1cb8ad2b852, 0x63984e959a98244b },
-    revision: u64 = 0,
-    response: *const HHDMResponse = undefined,
-};
+pub export var hhdm linksection(".requests") =
+    Request(.{ 0x48dcf1cb8ad2b852, 0x63984e959a98244b }, HHDMResponse){};
 
 pub const HHDMResponse = extern struct {
     revision: u64,
@@ -165,13 +159,8 @@ pub inline fn convertPointer(ptr: anytype) @TypeOf(ptr) {
 
 // SMBIOS
 
-pub export var smbios linksection(".requests") = SMBIOSRequest{};
-
-pub const SMBIOSRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x9e9046f11e095391, 0xaa4a520fefbde5ee },
-    revision: u64 = 0,
-    response: *const SMBIOSResponse = undefined,
-};
+pub export var smbios linksection(".requests") =
+    Request(.{ 0x9e9046f11e095391, 0xaa4a520fefbde5ee }, SMBIOSResponse){};
 
 pub const SMBIOSResponse = extern struct {
     revision: u64,
@@ -179,15 +168,20 @@ pub const SMBIOSResponse = extern struct {
     entry_64: *const void,
 };
 
+// DEVICE TREE BLOB
+
+pub export var dtb linksection(".requests") =
+    Request(.{ 0xb40ddb48fb54bac7, 0x545081493f81ffb7 }, ?DeviceTreeResponse){};
+
+pub const DeviceTreeResponse = extern struct {
+    revision: u64,
+    pointer: ?*const void,
+};
+
 // EFI SYSTEM TABLE
 
-pub export var efi_system_table linksection(".requests") = EFISystemTableRequest{};
-
-pub const EFISystemTableRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc },
-    revision: u64 = 0,
-    response: *const EFISystemTableResponse = undefined,
-};
+pub export var efi_system_table linksection(".requests") =
+    Request(.{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc }, EFISystemTableResponse){};
 
 pub const EFISystemTableResponse = extern struct {
     revision: u64,
@@ -198,49 +192,37 @@ pub const EFISystemTableResponse = extern struct {
 
 const EFIMemoryDesc = std.os.uefi.tables.MemoryDescriptor;
 
-pub export var efi_memory_map linksection(".requests") = EFIMemoryMapRequest{};
+pub export var efi_mmap linksection(".requests") =
+    Request(.{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 }, EFIMMapResponse){};
 
-pub const EFIMemoryMapRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 },
-    revision: u64 = 0,
-    response: *const EFIMemoryMapResponse = undefined,
-};
-
-pub const EFIMemoryMapResponse = extern struct {
+pub const EFIMMapResponse = extern struct {
     revision: u64,
-    memmap: u64,
-    memmap_size: u64,
+    mmap: u64,
+    mmap_size: u64,
     desc_size: u64,
     desc_version: u64,
 };
 
-pub const EFIMemoryMapIterator = struct {
+pub const EFIMMapIterator = struct {
     addr: u64 = 0,
 
-    pub fn next(self: *EFIMemoryMapIterator) ?*EFIMemoryDesc {
-        if (self.addr >= (efi_memory_map.response.memmap +
-            efi_memory_map.response.memmap_size))
-        {
+    pub fn next(self: *EFIMMapIterator) ?*EFIMemoryDesc {
+        if (self.addr >= (efi_mmap.response.mmap + efi_mmap.response.mmap_size)) {
             return null;
         } else if (self.addr == 0) {
-            self.addr = efi_memory_map.response.memmap;
+            self.addr = efi_mmap.response.mmap;
         }
 
         const desc: *EFIMemoryDesc = @ptrFromInt(self.addr);
-        self.addr += efi_memory_map.response.desc_size;
+        self.addr += efi_mmap.response.desc_size;
         return desc;
     }
 };
 
 // KERNEL FILE
 
-pub export var kfile linksection(".requests") = KernelFileRequest{};
-
-pub const KernelFileRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0xad97e90e83f1ed67, 0x31eb5d1c5ff23b69 },
-    revision: u64 = 0,
-    response: *const KernelFileResponse = undefined,
-};
+pub export var kfile linksection(".requests") =
+    Request(.{ 0xad97e90e83f1ed67, 0x31eb5d1c5ff23b69 }, KernelFileResponse){};
 
 pub const KernelFileResponse = extern struct {
     revision: u64,
@@ -284,13 +266,8 @@ pub inline fn kend() usize {
 
 // KERNEL ADDRESS
 
-pub export var kaddr linksection(".requests") = KernelAddressRequest{};
-
-pub const KernelAddressRequest = extern struct {
-    id: [4]u64 = common_magic ++ .{ 0x71ba76863cc55f63, 0xb2644a48c516a487 },
-    revision: u64 = 0,
-    response: *const KernelAddressResponse = undefined,
-};
+pub export var kaddr linksection(".requests") =
+    Request(.{ 0x71ba76863cc55f63, 0xb2644a48c516a487 }, KernelAddressResponse){};
 
 pub const KernelAddressResponse = extern struct {
     revision: u64,

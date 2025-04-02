@@ -19,15 +19,15 @@ pub const SpinLock = struct {
     }
 };
 
-pub const SpinRwLock = struct {
+pub const SpinSharedLock = struct {
     inner: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
 
-    pub fn lock(self: *SpinRwLock) void {
+    pub fn lock(self: *SpinSharedLock) void {
         while (self.inner.cmpxchgWeak(0, 0x80000000, .acquire, .monotonic) != null)
             std.atomic.spinLoopHint();
     }
 
-    pub fn lockShared(self: *SpinRwLock) void {
+    pub fn lockShared(self: *SpinSharedLock) void {
         while (true) {
             const state = self.inner.load(.unordered);
             if (state & 0x80000000 == 0 and
@@ -38,13 +38,14 @@ pub const SpinRwLock = struct {
         }
     }
 
-    pub fn unlock(self: *SpinRwLock) void {
+    pub fn unlock(self: *SpinSharedLock) void {
         self.inner.store(0, .release);
     }
 
-    pub fn unlockShared(self: *SpinRwLock) void {
+    pub fn unlockShared(self: *SpinSharedLock) void {
         _ = self.inner.fetchSub(1, .release);
     }
 };
 
-pub const Lock = SpinRwLock;
+pub const Lock = SpinLock;
+pub const SharedLock = SpinSharedLock;

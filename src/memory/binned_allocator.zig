@@ -170,7 +170,7 @@ pub fn BinnedAllocator(comptime config: Config) type {
         }
 
         const Mutex = if (config.thread_safe)
-            lock.SpinLock
+            lock.Lock
         else
             struct {
                 fn lock(_: @This()) void {}

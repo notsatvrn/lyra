@@ -1,7 +1,7 @@
-const arch = @import("../arch.zig");
-
 const std = @import("std");
 
+const tty = @import("../tty.zig");
+const arch = @import("../arch.zig");
 const Color = @import("colors.zig").Basic;
 
 // STATE / INITIALIZATION
@@ -93,5 +93,27 @@ pub inline fn clear(self: *Self) void {
 }
 
 inline fn updateCursor(self: *const Self) void {
-    @import("../arch.zig").updateTextModeCursor(self);
+    @import("../arch.zig").text_mode.?.updateCursor(self);
+}
+
+// GENERIC INTERFACE
+
+fn genericPrint(tm: *anyopaque, string: []const u8) void {
+    print(@ptrCast(@alignCast(tm)), string);
+}
+
+fn genericClear(tm: *anyopaque) void {
+    clear(@ptrCast(@alignCast(tm)));
+}
+
+pub const generic_vtable = tty.Generic.VTable{
+    .print = &genericPrint,
+    .clear = &genericClear,
+};
+
+pub inline fn generic(self: *Self) tty.Generic {
+    return .{
+        .ptr = @ptrCast(self),
+        .vtable = generic_vtable,
+    };
 }
