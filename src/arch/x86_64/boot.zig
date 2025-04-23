@@ -4,7 +4,6 @@ const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const util = @import("util.zig");
 const cpuid = @import("cpuid.zig");
-const time = @import("time.zig");
 
 const log = @import("../../log.zig");
 const logger = log.Logger{ .name = "x86-64/boot" };

@@ -1,5 +1,5 @@
 pub const boot = @import("x86_64/boot.zig");
-pub const time = @import("x86_64/time.zig");
+pub const clock = @import("x86_64/clock.zig");
 pub const paging = @import("x86_64/paging.zig");
 pub const io = @import("x86_64/io.zig");
 

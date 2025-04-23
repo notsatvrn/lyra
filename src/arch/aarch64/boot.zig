@@ -1,5 +1,3 @@
-const time = @import("time.zig");
-
 const log = @import("../../log.zig");
 const logger = log.Logger{ .name = "aarch64/boot" };
 

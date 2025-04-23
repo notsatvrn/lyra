@@ -6,7 +6,7 @@ pub const colors = tty.colors;
 pub const ANSI = tty.effects.ANSI;
 
 const arch = @import("arch.zig");
-const nanoSinceBoot = @import("time.zig").nanoSinceBoot;
+const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
 const Lock = @import("util/lock.zig").Lock;
 
 var lock = Lock{};

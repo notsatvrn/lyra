@@ -1,5 +1,5 @@
 const std = @import("std");
-const arch = @import("arch.zig").time;
+const arch = @import("arch.zig").clock;
 
 const log = @import("log.zig");
 const logger = log.Logger{ .name = "time" };

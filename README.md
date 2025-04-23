@@ -28,19 +28,20 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
     - [ ] smp awareness
 - x86-64
   - [x] gdt/idt
-  - [ ] timing
+  - [x] system clock
     - [x] counter
-    - [x] system clock
-    - [ ] early boot clock
+    - [x] hw clock reading
+  - [ ] timers
+    - [x] pit programmer
   - [ ] smp
     - [x] core id storage
   - [x] interrupts
   - [x] pci device tree
 - aarch64
-  - [ ] timing
+  - [ ] system clock
     - [x] counter
-    - [ ] system clock
-    - [ ] early boot clock
+    - [ ] hw clock reading
+  - [ ] timers
   - [ ] smp
     - [ ] core id storage
 

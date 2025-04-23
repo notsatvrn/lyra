@@ -12,7 +12,7 @@ comptime {
 }
 
 pub const boot = arch.boot;
-pub const time = arch.time;
+pub const clock = arch.clock;
 pub const paging = arch.paging;
 pub const io = arch.io;
 

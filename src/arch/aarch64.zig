@@ -1,5 +1,5 @@
 pub const boot = @import("aarch64/boot.zig");
-pub const time = @import("aarch64/time.zig");
+pub const clock = @import("aarch64/clock.zig");
 pub const paging = @import("aarch64/paging.zig");
 pub const io = @import("../util/mmio.zig");
 

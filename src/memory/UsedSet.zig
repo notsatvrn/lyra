@@ -89,7 +89,7 @@ fn operations(self: *Self, start: usize, n: usize, comptime op: Operation) if (o
         },
     }
 
-    self.opret(n, res, op);
+    return self.opret(n, res, op);
 }
 
 // CLAIM RANGE (ALLOCATION)

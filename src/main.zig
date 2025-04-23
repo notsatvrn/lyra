@@ -5,7 +5,7 @@ const arch = @import("arch.zig");
 const memory = @import("memory.zig");
 const pci = @import("pci.zig");
 const smp = @import("smp.zig");
-const time = @import("time.zig");
+const clock = @import("clock.zig");
 
 const gfx = @import("gfx.zig");
 const tty = @import("tty.zig");
@@ -49,7 +49,7 @@ export fn _start() callconv(.c) noreturn {
 
     arch.boot.setup();
     arch.paging.saveTable();
-    time.setup();
+    clock.setup();
     memory.init();
     fbExtendedSetup();
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
