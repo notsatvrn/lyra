@@ -13,6 +13,37 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
 - Legacy support (32-bit, pre-Nehalem CPUs, etc)
 - Obscure hardware support (e.g. big-endian)
 
+## Progress
+
+- generic
+  - [x] tty
+    - [x] text mode impl
+    - [x] framebuffer impl
+  - [ ] memory
+    - [x] pmm
+    - [ ] vmm
+  - [ ] process scheduler
+    - [x] red-black tree impl
+    - [ ] process structures
+    - [ ] smp awareness
+- x86-64
+  - [x] gdt/idt
+  - [ ] timing
+    - [x] counter
+    - [x] system clock
+    - [ ] early boot clock
+  - [ ] smp
+    - [x] core id storage
+  - [x] interrupts
+  - [x] pci device tree
+- aarch64
+  - [ ] timing
+    - [x] counter
+    - [ ] system clock
+    - [ ] early boot clock
+  - [ ] smp
+    - [ ] core id storage
+
 ## Credits
 
 - [Zig](https://ziglang.org/) for being the best programming language 😉

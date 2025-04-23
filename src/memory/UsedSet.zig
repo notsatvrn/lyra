@@ -13,12 +13,6 @@ used: usize = 0,
 // but falling back if needed just requires a simple check
 tail: usize = 0,
 
-//pub const bits = @typeInfo(usize).int.bits;
-//pub const usize_bytes = usize_bits / 8;
-//const ShiftT = std.math.Log2Int(usize);
-//const shiftv = std.math.log2_int(usize, bits);
-//const set = maxInt(usize);
-
 const Self = @This();
 
 comptime {
@@ -32,90 +26,70 @@ pub inline fn allocate(allocator: std.mem.Allocator, size: usize) !Self {
 
 // OPERATION IMPLEMENTATIONS
 
-// unroll thresholds
-const word_threshold = (4 * 16) - 1;
-const dword_threshold = (4 * 32) - 1;
-const qword_threshold = (4 * 64) - 1;
-
 const Operation = enum { read, unset, set };
 
-// regular bit operator; uses a whole function to DRY out the code
-inline fn operation(self: *Self, offset: usize, comptime op: Operation) usize {
-    const int = offset / 64;
-    const shift: u6 = @truncate(offset);
-    const bit = @as(u64, 1) << shift;
+inline fn mkmask(n: usize, offset: usize) u64 {
+    return ((@as(u64, 1) << @truncate(n)) - 1) << @truncate(offset);
+}
 
-    const res = if (op != .set) (self.ptr[int] >> shift) & 1 else 0;
+inline fn applyMask(self: *Self, int: usize, mask: u64, comptime op: Operation) usize {
+    const current = self.ptr[int] & mask;
+    const res = if (op != .set) @popCount(current) else 0;
 
     if (op == .set) {
-        self.ptr[int] |= bit;
+        self.ptr[int] |= mask;
     } else if (op == .unset) {
-        self.ptr[int] &= ~bit;
+        self.ptr[int] &= ~mask;
     }
 
     return res;
 }
 
-// perf: align to an int and do integer-based iteration (sums in-use bits with popCount, or uses memset)
-// this is called only by operations, which uses thresholds to decide when to use this over bit iteration
-inline fn operationsFast(comptime T: type, self: *Self, start: usize, n: usize, comptime op: Operation) usize {
-    const bits = switch (T) {
-        u8, u16, u32, u64 => @typeInfo(T).int.bits,
-        else => @compileError("invalid operationsFast type (u8, u16, u32, u64 allowed)"),
-    };
-
-    var res: usize = 0;
-
-    // modify full ints at a time
-    const end = start + n;
-    const ints_end = end / bits;
-    const ints_start = (start + (bits - 1)) / bits;
-
-    var bitset: [*]T = @ptrCast(self.ptr);
-
+inline fn opret(self: *Self, n: usize, res: usize, comptime op: Operation) if (op == .read) usize else void {
     switch (op) {
-        .set => @memset(bitset[ints_start..ints_end], maxInt(T)),
-        .unset => for (ints_start..ints_end) |i| {
-            res += @popCount(bitset[i]);
-            bitset[i] = 0;
-        },
-        .read => for (ints_start..ints_end) |i| {
-            res += @popCount(bitset[i]);
-        },
+        .set => self.used += n,
+        .unset => self.used -= res,
+        .read => return res,
     }
-
-    // modify bits at the start
-    for (start..ints_start * bits) |i|
-        res += self.operation(i, op);
-
-    // modify bits at the end
-    for (ints_end * bits..end) |i|
-        res += self.operation(i, op);
-
-    return res;
 }
 
 // wrapper around operationsFast and the bit iteration implementation
 // only if we need to read does this return anything but void, otherwise modifies used counter
 fn operations(self: *Self, start: usize, n: usize, comptime op: Operation) if (op == .read) usize else void {
-    const in_use = if (n < word_threshold) slow: {
-        // op bits individually
-        var res: usize = 0;
-        for (start..start + n) |i|
-            res += self.operation(i, op);
-        break :slow res;
-    } else if (n < dword_threshold)
-        operationsFast(u16, self, start, n, op)
-    else if (n < qword_threshold)
-        operationsFast(u32, self, start, n, op)
-    else
-        operationsFast(u64, self, start, n, op);
+    var res: usize = 0;
+    const end = start + n;
 
+    // modify bits at the start
+    const ints_start = (start + 63) / 64;
+    const start_int = start / 64;
+    const start_bits = (ints_start * 64) - start;
+    const start_mask = mkmask(start_bits, start - (start_int * 64));
+    res += self.applyMask(start_int, start_mask, op);
+
+    // only needed to modify bits of one integer
+    if (end <= ints_start * 64) return self.opret(n, res, op);
+
+    // modify bits at the end
+    const ints_end = end / 64;
+    const end_mask = mkmask(end % 64, 0);
+    res += self.applyMask(ints_end, end_mask, op);
+
+    // only needed to modify bits of two integers
+    if (ints_end <= ints_start) return self.opret(n, res, op);
+
+    // modify integers in between
     switch (op) {
-        .set => self.used += n,
-        .unset => self.used -= in_use,
-        .read => return in_use,
+        .set => @memset(self.ptr[ints_start..ints_end], maxInt(u64)),
+        .unset => for (ints_start..ints_end) |i| {
+            res += @popCount(self.ptr[i]);
+            self.ptr[i] = 0;
+        },
+        .read => for (ints_start..ints_end) |i| {
+            res += @popCount(self.ptr[i]);
+        },
     }
+
+    self.opret(n, res, op);
 }
 
 // CLAIM RANGE (ALLOCATION)

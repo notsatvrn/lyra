@@ -1,5 +1,5 @@
 const std = @import("std");
-const time = @import("../arch.zig").time;
+const time = @import("../time.zig");
 
 const log = @import("../log.zig");
 const logger = log.Logger{ .name = "memory/bench" };
@@ -63,7 +63,7 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
     var random = rng.random();
     var bytes_total: usize = 0;
 
-    var storage = page_allocator.alloc([][page_size]u8, divisor) catch @panic("failed to build bench storage");
+    var storage = page_allocator.alloc(memory.Block, divisor) catch @panic("failed to build bench storage");
     var tables = page_allocator.alloc([]usize, iters) catch @panic("failed to build RNG table directory");
     for (0..iters) |i| tables[i] = buildRNGTable(divisor);
 
@@ -106,7 +106,7 @@ fn benchSeqRand(comptime pages: usize) void {
 
     logger.debug("bench: sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_size / KB), size_seq * outer_iter });
 
-    var storage = page_allocator.alloc([*][page_size]u8, size_seq) catch @panic("failed to build bench storage");
+    var storage = page_allocator.alloc(memory.Ptr, size_seq) catch @panic("failed to build bench storage");
     var tables = page_allocator.alloc([]usize, outer_iter) catch @panic("failed to build RNG table directory");
     for (0..outer_iter) |i| tables[i] = buildRNGTable(size_seq);
 
