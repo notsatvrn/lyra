@@ -122,18 +122,6 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
 
     // allocate from the start
 
-    {
-        var start: usize = 0;
-
-        while (start < self.len) {
-            while (start < self.len) : (start += 64) {
-                const int = self.ptr[start / 64];
-                if (int == ~@as(u64, 0)) break;
-                //if (@popCount(not_int) < )
-            }
-        }
-    }
-
     const ints = (self.len + 63) / 64;
     var bit_rem = self.len;
     var start: usize = 0;
@@ -153,14 +141,6 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
         }
 
         const not_int = ~int;
-        if (false) {
-            if (@popCount(not_int) < rem) {
-                // num free pages < num needed pages
-                start += 64;
-                rem = n;
-                continue;
-            }
-        }
 
         // perf: skip trailing / leading used pages
         // instrinsics are much faster than iteration
