@@ -34,7 +34,7 @@ pub fn cpuEntry(cpu: *const limine.CPU) callconv(.c) noreturn {
     arch.setCPU(cpu.extra);
     logger.debug("cpu {} online (acpi_id: {})", .{ arch.getCPU(), info().acpi_id });
 
-    arch.halt();
+    while (true) arch.util.wfi();
 }
 
 // CPU INFO
@@ -79,7 +79,7 @@ pub fn LocalStorage(comptime T: type) type {
 
 pub fn LockingStorage(comptime T: type) type {
     return struct {
-        const Lock = @import("util/lock.zig").Lock;
+        const Lock = @import("util/lock.zig").SpinLock;
 
         allocator: Allocator,
         objects: []Entry,

@@ -7,7 +7,7 @@ pub const ANSI = tty.effects.ANSI;
 
 const arch = @import("arch.zig");
 const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
-const Lock = @import("util/lock.zig").Lock;
+const Lock = @import("util/lock.zig").SpinLock;
 
 var lock = Lock{};
 
@@ -104,5 +104,5 @@ pub inline fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: an
     writer.print("[PANIC] " ++ fmt ++ "\n", args) catch unreachable;
     //if (ert) |s| writer.print("stack trace:\n{}", .{s}) catch unreachable;
     tty.sync();
-    arch.halt();
+    arch.util.halt();
 }

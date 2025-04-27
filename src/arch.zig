@@ -13,8 +13,9 @@ comptime {
 
 pub const boot = arch.boot;
 pub const clock = arch.clock;
+pub const timing = arch.timing;
 pub const paging = arch.paging;
-pub const io = arch.io;
+pub const util = arch.util;
 
 pub const text_mode: ?type = if (@hasDecl(arch, "text_mode")) arch.text_mode else null;
 
@@ -23,5 +24,3 @@ pub const setCPU = arch.setCPU;
 pub const getCPU = arch.getCPU;
 
 pub const pciDetect = arch.pciDetect;
-
-pub const halt = arch.halt;

@@ -7,7 +7,7 @@ const std = @import("std");
 const Order = std.math.Order;
 
 const memory = @import("memory.zig");
-const Lock = @import("util/lock.zig").SharedLock;
+const Lock = @import("util/lock.zig").SpinSharedLock;
 
 // TREE
 

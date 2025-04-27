@@ -15,17 +15,17 @@ pub fn run() void {
     // bench - random alloc and dealloc
 
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(250, 10);
+    benchRandom(50, 10);
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(225, 100);
+    benchRandom(45, 100);
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(150, 1000);
+    benchRandom(30, 1000);
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(60, 10000);
+    benchRandom(12, 10000);
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(20, 100000);
+    benchRandom(4, 100000);
     clock.stall(std.time.ns_per_ms * 10);
-    benchRandom(5, 1000000);
+    benchRandom(1, 1000000);
 
     // bench - sequential 4K alloc / random dealloc
 
@@ -53,8 +53,10 @@ inline fn buildRNGTable(size: usize) []usize {
 
 // BENCHMARKS
 
+const iters_multiplier = 1;
+
 fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
-    logger.debug("bench: random alloc and dealloc (divisor: {})", .{divisor});
+    logger.debug("random alloc and dealloc (divisor: {})", .{divisor});
 
     const divisor_f = @as(f64, @floatFromInt(divisor));
     const amt = (unused() * 3) / 4;
@@ -64,13 +66,13 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
     var bytes_total: usize = 0;
 
     var storage = page_allocator.alloc(memory.Block, divisor) catch @panic("failed to build bench storage");
-    var tables = page_allocator.alloc([]usize, iters) catch @panic("failed to build RNG table directory");
-    for (0..iters) |i| tables[i] = buildRNGTable(divisor);
+    var tables = page_allocator.alloc([]usize, iters * iters_multiplier) catch @panic("failed to build RNG table directory");
+    for (0..iters * iters_multiplier) |i| tables[i] = buildRNGTable(divisor);
 
     const start = clock.nanoSinceBoot();
 
-    for (0..iters) |_| {
-        for (0..iters) |j| {
+    for (0..iters * iters_multiplier) |_| {
+        for (0..iters * iters_multiplier) |j| {
             const table = tables[j];
             for (0..divisor) |i| {
                 var pages: usize = 0;
@@ -93,18 +95,18 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
     const btf: f64 = @as(f64, @floatFromInt(bytes_total));
     const bps = btf / (diff / std.time.ns_per_s);
 
-    logger.debug("done ({d:.3}GB/s | {d:.3}KB avg size per alloc)", .{ bps / GB, (btf / (iters * iters * divisor)) / KB });
+    logger.debug("done ({d:.3}GB/s | {d:.3}KB avg size per alloc)", .{ bps / GB, (btf / (iters * iters_multiplier * iters * iters_multiplier * divisor)) / KB });
 
     page_allocator.free(storage);
-    for (0..iters) |i| page_allocator.free(tables[i]);
+    for (0..iters * iters_multiplier) |i| page_allocator.free(tables[i]);
     page_allocator.free(tables);
 }
 
 fn benchSeqRand(comptime pages: usize) void {
     const size_seq = (unused() / 2) / pages;
-    const outer_iter = pages * 25;
+    const outer_iter = pages * 5 * iters_multiplier;
 
-    logger.debug("bench: sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_size / KB), size_seq * outer_iter });
+    logger.debug("sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_size / KB), size_seq * outer_iter });
 
     var storage = page_allocator.alloc(memory.Ptr, size_seq) catch @panic("failed to build bench storage");
     var tables = page_allocator.alloc([]usize, outer_iter) catch @panic("failed to build RNG table directory");

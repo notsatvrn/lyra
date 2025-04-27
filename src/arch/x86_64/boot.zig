@@ -11,10 +11,10 @@ const logger = log.Logger{ .name = "x86-64/boot" };
 // INITIAL SETUP
 
 pub inline fn init() void {
-    util.disableInterrupts();
     gdt.init();
     int.idt.init();
     int.remapPIC(32, 40);
+    util.enablePICInterrupts();
 }
 
 // FURTHER SETUP WITH LOGGING

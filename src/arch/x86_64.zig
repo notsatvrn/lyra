@@ -1,7 +1,8 @@
 pub const boot = @import("x86_64/boot.zig");
 pub const clock = @import("x86_64/clock.zig");
+pub const timing = @import("x86_64/timing.zig");
 pub const paging = @import("x86_64/paging.zig");
-pub const io = @import("x86_64/io.zig");
+pub const util = @import("x86_64/util.zig");
 
 // VGA TEXT MODE
 
@@ -11,6 +12,7 @@ pub const text_mode = struct {
     }
 
     const TextMode = @import("../tty/TextMode.zig");
+    const io = @import("x86_64/io.zig");
 
     pub inline fn updateCursor(state: *const TextMode) void {
         if (!state.cursor) return;
@@ -22,14 +24,23 @@ pub const text_mode = struct {
     }
 };
 
+// MULTI-PROCESSOR HELPERS
+
+const gdt = @import("x86_64/gdt.zig");
+const isr = @import("x86_64/int/isr.zig");
+
+pub fn prepCPUs(cpus: usize) !void {
+    try gdt.update(cpus);
+    try isr.newStacks(cpus);
+}
+
+pub fn setCPU(cpu: usize) void {
+    gdt.load(cpu);
+    isr.setupCPU(cpu);
+}
+
+pub const getCPU = gdt.str;
+
 // MISCELLANEOUS STUFF
 
-pub const prepCPUs = @import("x86_64/gdt.zig").update;
-pub const setCPU = @import("x86_64/gdt.zig").load;
-pub const getCPU = @import("x86_64/gdt.zig").str;
-
 pub const pciDetect = @import("x86_64/pci.zig").detect;
-
-const util = @import("x86_64/util.zig");
-pub const wfi = util.wfi;
-pub const halt = util.halt;

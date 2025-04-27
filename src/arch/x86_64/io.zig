@@ -1,8 +1,6 @@
-// I/O implementation on x86-64 (legacy port-mapped I/O)
+// I/O PORTS
 
-pub const Port = u16;
-
-pub inline fn in(comptime T: type, port: Port) T {
+pub inline fn in(comptime T: type, port: u16) T {
     return switch (T) {
         u8 => asm volatile ("inb %[port], %[result]"
             : [result] "={al}" (-> u8),
@@ -20,7 +18,7 @@ pub inline fn in(comptime T: type, port: Port) T {
     };
 }
 
-pub inline fn ins(comptime T: type, port: Port, len: usize) [len]T {
+pub inline fn ins(comptime T: type, port: u16, len: usize) [len]T {
     var data: [len]T = undefined;
     const addr = @intFromPtr(&data);
 
@@ -43,7 +41,7 @@ pub inline fn ins(comptime T: type, port: Port, len: usize) [len]T {
     return data;
 }
 
-pub inline fn out(comptime T: type, port: Port, value: T) void {
+pub inline fn out(comptime T: type, port: u16, value: T) void {
     switch (T) {
         u8 => asm volatile ("outb %[value], %[port]"
             :
@@ -62,4 +60,32 @@ pub inline fn out(comptime T: type, port: Port, value: T) void {
         ),
         else => @compileError("invalid type (must be u8, u16, u32)"),
     }
+}
+
+// MODEL SPECIFIC REGISTERS
+
+pub inline fn rdmsr(msr: u32) u64 {
+    var lo: u32 = 0;
+    var hi: u32 = 0;
+
+    asm volatile (
+        \\rdmsr
+        : [lo] "={eax}" (lo),
+          [hi] "={edx}" (hi),
+        : [msr] "{ecx}" (msr),
+    );
+
+    return (@as(u64, hi) << 32) | @as(u64, lo);
+}
+
+pub inline fn wrmsr(msr: u32, value: u64) void {
+    const lo: u32 = @truncate(value);
+    const hi: u32 = @truncate(value >> 32);
+
+    asm volatile (
+        \\wrmsr
+        : [lo] "{eax}" (lo),
+          [hi] "{edx}" (hi),
+          [msr] "{ecx}" (msr),
+    );
 }

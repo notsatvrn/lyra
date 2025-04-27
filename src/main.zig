@@ -3,9 +3,10 @@ const std = @import("std");
 const limine = @import("limine.zig");
 const arch = @import("arch.zig");
 const memory = @import("memory.zig");
-const pci = @import("pci.zig");
 const smp = @import("smp.zig");
 const clock = @import("clock.zig");
+const pci = @import("pci.zig");
+const acpi = @import("acpi.zig");
 
 const gfx = @import("gfx.zig");
 const tty = @import("tty.zig");
@@ -17,6 +18,7 @@ const logger = log.Logger{ .name = "main" };
 var tty_init_tm: tty.TextMode = undefined;
 
 export fn _start() callconv(.c) noreturn {
+    arch.util.disableInterrupts();
     arch.boot.init();
 
     // setup logging
@@ -46,77 +48,59 @@ export fn _start() callconv(.c) noreturn {
     }
 
     tty.clear();
-
     arch.boot.setup();
     arch.paging.saveTable();
-    clock.setup();
     memory.init();
-    fbExtendedSetup();
+    smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
+    arch.util.enableInterrupts();
+    clock.setup();
+
+    if (framebuffers.count != 0) fbsetup: {
+        // set current framebuffer to mirror a virtual framebuffer (double-buffering)
+
+        const smallest = tty.framebuffer.?.basic;
+        const s_buffer = smallest.buffer;
+
+        var mode = s_buffer.mode.*;
+        mode.pitch = mode.width * s_buffer.bytes;
+        var new_fb = tty.Framebuffer.initVirtual(&mode) catch break :fbsetup;
+
+        new_fb.advanced.base.render = smallest.render;
+        new_fb.advanced.base.cursor = smallest.cursor;
+        new_fb.advanced.initMirroring(s_buffer) catch break :fbsetup;
+
+        defer tty.framebuffer = new_fb;
+
+        // add additional mirrors
+
+        if (framebuffers.count == 1) break :fbsetup;
+
+        for (0..framebuffers.count) |i| {
+            const new = framebuffers.entries[i];
+            const new_mode = new.defaultVideoMode();
+            const new_buffer = gfx.Framebuffer.init(new.ptr, &new_mode);
+            new_fb.advanced.addMirror(new_buffer) catch break;
+        }
+    }
+
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
-    smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
+    acpi.sdt_start = limine.rsdp.response.ptr.sdt();
 
-    arch.halt();
+    //arch.timing.setSpeed(500.0);
+    //arch.timing.setHandler(tickHandler);
+
+    while (true) arch.util.wfi();
 }
 
-// WIP
-fn efiStuff() void {
-    std.os.uefi.system_table = limine.efi_system_table.response.ptr;
-    std.os.uefi.system_table.runtime_services = limine.convertPointer(std.os.uefi.system_table.runtime_services);
-    std.os.uefi.system_table.runtime_services.resetSystem = limine.convertPointer(std.os.uefi.system_table.runtime_services.resetSystem);
-    std.os.uefi.system_table.runtime_services.setVirtualAddressMap = limine.convertPointer(std.os.uefi.system_table.runtime_services.setVirtualAddressMap);
+var tick: usize = 0;
+inline fn tickHandler() void {
+    const cpu = arch.getCPU();
+    logger.info("tick on cpu {}", .{cpu});
 
-    const efi_mmap = limine.efi_memory_map.response;
-    const map_size = efi_mmap.memmap_size / efi_mmap.desc_size;
-
-    const map = memory.allocator.alloc(std.os.uefi.tables.MemoryDescriptor, map_size) catch log.panic(null, "failed to allocate new efi virtual map", .{});
-
-    var efi_mmap_iter = limine.EFIMemoryMapIterator{};
-    var index: usize = 0;
-    while (efi_mmap_iter.next()) |desc| {
-        map[index] = desc.*;
-        map[index].virtual_start = map[index].physical_start | limine.hhdm.response.offset;
-        index += 1;
-    }
-
-    _ = std.os.uefi.system_table.runtime_services.setVirtualAddressMap(map_size, @sizeOf(std.os.uefi.tables.MemoryDescriptor), @intCast(limine.efi_memory_map.response.desc_version), map.ptr);
-
-    for (0..5) |i| {
-        logger.info("resetting in {}", .{5 - i});
-        arch.time.stall(std.time.ns_per_s);
-    }
-
-    std.os.uefi.system_table.runtime_services.resetSystem(.reset_shutdown, .success, 0, null);
-}
-
-inline fn fbExtendedSetup() void {
-    const framebuffers = limine.fb.response;
-    if (framebuffers.count == 0) return;
-
-    // set current framebuffer to mirror a virtual framebuffer (double-buffering)
-
-    const smallest = tty.framebuffer.?.basic;
-    const s_buffer = smallest.buffer;
-
-    var mode = s_buffer.mode.*;
-    mode.pitch = mode.width * s_buffer.bytes;
-    var new_fb = tty.Framebuffer.initVirtual(&mode) catch return;
-
-    new_fb.advanced.base.render = smallest.render;
-    new_fb.advanced.base.cursor = smallest.cursor;
-    new_fb.advanced.initMirroring(s_buffer) catch return;
-
-    defer tty.framebuffer = new_fb;
-
-    // add additional mirrors
-
-    if (framebuffers.count == 1) return;
-
-    for (0..framebuffers.count) |i| {
-        const new = framebuffers.entries[i];
-        const new_mode = new.defaultVideoMode();
-        const new_buffer = gfx.Framebuffer.init(new.ptr, &new_mode);
-        new_fb.advanced.addMirror(new_buffer) catch break;
+    if (cpu == 0) {
+        tick += 1;
+        logger.info("tick #{}", .{tick});
     }
 }
 

@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
-const maxInt = std.math.maxInt;
 
 ptr: [*]u64,
 len: usize,
@@ -33,14 +32,12 @@ inline fn mkmask(n: usize, offset: usize) u64 {
 }
 
 inline fn applyMask(self: *Self, int: usize, mask: u64, comptime op: Operation) usize {
-    const current = self.ptr[int] & mask;
-    const res = if (op != .set) @popCount(current) else 0;
+    const res = if (op != .set) @popCount(self.ptr[int] & mask) else 0;
 
-    if (op == .set) {
-        self.ptr[int] |= mask;
-    } else if (op == .unset) {
+    if (op == .set)
+        self.ptr[int] |= mask
+    else if (op == .unset)
         self.ptr[int] &= ~mask;
-    }
 
     return res;
 }
@@ -53,33 +50,51 @@ inline fn opret(self: *Self, n: usize, res: usize, comptime op: Operation) if (o
     }
 }
 
-// wrapper around operationsFast and the bit iteration implementation
-// only if we need to read does this return anything but void, otherwise modifies used counter
-fn operations(self: *Self, start: usize, n: usize, comptime op: Operation) if (op == .read) usize else void {
+// optimized bitset operation function using whole integers, masking, and intrinsics for quick manipulation
+fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op == .read) usize else void {
+    // fast path: only one page to mark
+    // we know one bit will always fit into only one integer
+    // skip unneeded math, don't use @popCount for no reason
+    if (n == 1) {
+        const int = start / 64;
+        const shift: u6 = @truncate(start);
+        const res = if (op != .set) (self.ptr[int] >> shift) & 1 else 0;
+
+        if (op == .set)
+            self.ptr[int] |= @as(u64, 1) << shift
+        else if (op == .unset)
+            self.ptr[int] -= @as(u64, 1) << shift; // when only one bit is set, we can do rhs - lhs instead of rhs & ~lhs
+
+        return self.opret(1, res, op);
+    }
+
     var res: usize = 0;
-    const end = start + n;
 
     // modify bits at the start
     const ints_start = (start + 63) / 64;
-    const start_int = start / 64;
-    const start_bits = (ints_start * 64) - start;
-    const start_mask = mkmask(start_bits, start - (start_int * 64));
-    res += self.applyMask(start_int, start_mask, op);
-
-    // only needed to modify bits of one integer
-    if (end <= ints_start * 64) return self.opret(n, res, op);
+    const start_bits = @min(n, (ints_start * 64) - start);
+    if (start_bits > 0) {
+        const start_int = start / 64;
+        const start_mask = mkmask(start_bits, start - (start_int * 64));
+        res += self.applyMask(start_int, start_mask, op);
+        // only needed to modify bits of one integer
+        if (start_bits == n) return self.opret(n, res, op);
+    }
 
     // modify bits at the end
+    const end = start + n;
     const ints_end = end / 64;
-    const end_mask = mkmask(end % 64, 0);
-    res += self.applyMask(ints_end, end_mask, op);
-
-    // only needed to modify bits of two integers
-    if (ints_end <= ints_start) return self.opret(n, res, op);
+    const end_bits = end % 64;
+    if (end_bits > 0) {
+        const end_mask = mkmask(end_bits, 0);
+        res += self.applyMask(ints_end, end_mask, op);
+        // only needed to modify bits of two integers
+        if (ints_end <= ints_start) return self.opret(n, res, op);
+    }
 
     // modify integers in between
     switch (op) {
-        .set => @memset(self.ptr[ints_start..ints_end], maxInt(u64)),
+        .set => @memset(self.ptr[ints_start..ints_end], ~@as(u64, 0)),
         .unset => for (ints_start..ints_end) |i| {
             res += @popCount(self.ptr[i]);
             self.ptr[i] = 0;
@@ -101,11 +116,23 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
 
     if (self.len - self.tail >= n) {
         defer self.tail += n;
-        self.operations(self.tail, n, .set);
+        self.operation(self.tail, n, .set);
         return self.tail;
     }
 
     // allocate from the start
+
+    {
+        var start: usize = 0;
+
+        while (start < self.len) {
+            while (start < self.len) : (start += 64) {
+                const int = self.ptr[start / 64];
+                if (int == ~@as(u64, 0)) break;
+                //if (@popCount(not_int) < )
+            }
+        }
+    }
 
     const ints = (self.len + 63) / 64;
     var bit_rem = self.len;
@@ -114,30 +141,30 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
 
     for (0..ints) |i| {
         const int = self.ptr[i];
-        const not_int = ~int;
-
         const len = @min(bit_rem, 64);
         bit_rem -= len;
 
         if (int == 0) {
             rem -|= len;
             if (rem == 0) {
-                self.operations(start, n, .set);
+                self.operation(start, n, .set);
                 return start;
-            }
-
-            continue;
-        } else if (@popCount(not_int) < rem) {
-            // num free pages < num needed pages
-
-            // just add 64 here, partial ints
-            // will make the loop end anyways
-            start += 64;
-            rem = n;
-            continue;
+            } else continue;
         }
 
-        for (@ctz(not_int)..len) |j| {
+        const not_int = ~int;
+        if (false) {
+            if (@popCount(not_int) < rem) {
+                // num free pages < num needed pages
+                start += 64;
+                rem = n;
+                continue;
+            }
+        }
+
+        // perf: skip trailing / leading used pages
+        // instrinsics are much faster than iteration
+        for (@ctz(not_int)..len - @clz(not_int)) |j| {
             rem -= 1;
             if ((int >> @truncate(j)) & 1 == 1) {
                 start += n - rem;
@@ -146,7 +173,7 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
             } else if (rem != 0)
                 continue;
 
-            self.operations(start, n, .set);
+            self.operation(start, n, .set);
             return start;
         }
     }
@@ -163,7 +190,7 @@ pub fn resizeRange(self: *Self, start: usize, size: usize, new_size: usize) bool
 
     // shrinkage is super fast
     if (new_size < size) {
-        self.operations(start + new_size, size - new_size, .unset);
+        self.operation(start + new_size, size - new_size, .unset);
         return true;
     }
 
@@ -173,11 +200,11 @@ pub fn resizeRange(self: *Self, start: usize, size: usize, new_size: usize) bool
     const growth = new_size - size;
 
     if (end == self.tail and start + new_size <= self.len - self.tail) {
-        self.operations(end, growth, .set);
+        self.operation(end, growth, .set);
         self.tail += growth;
         return true;
-    } else if (self.operations(end, growth, .read) == 0) {
-        self.operations(end, growth, .set);
+    } else if (self.operation(end, growth, .read) == 0) {
+        self.operation(end, growth, .set);
         return true;
     } else return false;
 }
@@ -188,7 +215,7 @@ pub fn unclaimRange(self: *Self, start: usize, n: usize) void {
     assert(start + n < self.len);
 
     // unset bits and reclaim in-use
-    self.operations(start, n, .unset);
+    self.operation(start, n, .unset);
 
     // if this isn't tail range, return
     if (start + n != self.tail) return;

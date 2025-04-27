@@ -3,7 +3,7 @@
 // Original code from Andrea Orru's Zen kernel project (reboot branch)
 // https://github.com/AndreaOrru/zen/blob/reboot/kernel/src/interrupt/isr_stubs.s
 
-.extern kernel_stack    // Defined in `isr.zig`.
+.extern getStack        // Defined in `isr.zig`.
 .extern context         // Defined in `isr.zig`.
 .extern handlers        // Defined in `../int.zig`.
 // .extern SyscallHandler      // Defined in `system/syscall.zig`.
@@ -63,7 +63,8 @@
 
         // Save the pointer to the current context and switch to the kernel stack.
         mov %rsp, context
-        mov kernel_stack, %rsp
+        call getStack
+        mov %rax, %rsp
 
         // Handle interrupts with their respective handlers.
         .if \syscall == 0

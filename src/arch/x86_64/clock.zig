@@ -4,9 +4,6 @@ const util = @import("util.zig");
 const int = @import("int.zig");
 const io = @import("io.zig");
 
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "x86-64/time" };
-
 // TIME STAMP COUNTER
 
 pub inline fn counter() u64 {
@@ -17,60 +14,51 @@ pub inline fn counter() u64 {
         \\rdtsc
         : [lo] "={eax}" (lo),
           [hi] "={edx}" (hi),
-        :
-        : "eax", "edx"
     );
 
     return (@as(u64, hi) << 32) | @as(u64, lo);
 }
 
-// PROGRAMMABLE INTERVAL TIMER
-// https://wiki.osdev.org/Programmable_Interval_Timer
+// Using the PIT to estimate CPU speed for a time stamp counter clock.
+// Based on https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
+
+const timing = @import("timing.zig");
 
 var last_reading: usize = 0;
 var pit_ints: usize = 0;
-const pit_int_goal = 8;
 
-inline fn pit_handler(_: *int.InterruptStack) void {
+inline fn pitHandler(_: *int.InterruptStack) void {
     last_reading = counter();
     pit_ints += 1;
 }
 
 fn pitTimerReading() usize {
+    const int_goal = 8;
+
     // first reading - short
-    const pi_first = pit_ints;
-    while (pit_ints == pi_first)
+    const first = pit_ints;
+    while (pit_ints == first)
         std.atomic.spinLoopHint();
     const start = last_reading;
 
     // second reading - long
-    const pi_goal = pit_ints + pit_int_goal;
+    const goal = pit_ints + int_goal;
     var tmp: usize = 0;
-    while (pit_ints < pi_goal) {
+    while (pit_ints < goal) {
         tmp += 1;
         std.mem.doNotOptimizeAway(tmp);
     }
     const end = last_reading;
 
-    return (end - start) / pit_int_goal;
+    return (end - start) / int_goal;
 }
 
-const pit_divisor = 29102; // largest factor of 1193182 thats <= 65535
-const pit_hz = 1193182 / pit_divisor; // divisor is factor, will be int
 const cycle_goal = 0.005; // consistency goal of 0.5%
 
-// https://wiki.osdev.org/Detecting_CPU_Speed#Working_Example_Code
 pub inline fn counterSpeed() u64 {
-    // setup PIT
-    io.out(u8, 0x43, 0b00110100);
-    io.out(u8, 0x40, @truncate(pit_divisor));
-    io.out(u8, 0x40, @truncate(pit_divisor >> 8));
+    timing.setPITDivisor(timing.pit_max_divisor);
 
-    // enable interrupts
-    util.enableInterrupts();
-    util.enablePICInterrupts();
-    // register handler
-    int.registerIRQ(0, pit_handler, false);
+    int.registerIRQ(0, pitHandler, false);
 
     // reread until the difference is tiny
     var cycles = pitTimerReading();
@@ -92,15 +80,9 @@ pub inline fn counterSpeed() u64 {
         } else cycles = second;
     }
 
-    // disable interrupts
-    util.disablePICInterrupts();
-    util.disableInterrupts();
-    // unregister handler
     int.registerIRQ(0, null, false);
 
-    const speed = cycles * pit_hz;
-    logger.debug("estimated cpu speed: {}MHz", .{speed / std.time.ns_per_ms});
-    return speed;
+    return cycles * timing.pit_min_hz;
 }
 
 // REAL TIME CLOCK

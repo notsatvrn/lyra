@@ -29,12 +29,14 @@ pub inline fn enablePICInterrupts() void {
 
 pub inline fn disableInterrupts() void {
     asm volatile ("cli");
+    // non-maskable interrupts
     //io.out(u8, 0x70, io.in(u8, 0x70) & 0x7F);
     //_ = io.in(u8, 0x71);
 }
 
 pub inline fn enableInterrupts() void {
     asm volatile ("sti");
+    // non-maskable interrupts
     //io.out(u8, 0x70, io.in(u8, 0x70) | 0x80);
     //_ = io.in(u8, 0x71);
 }

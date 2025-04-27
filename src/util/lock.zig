@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// LOCKING MECHANISMS
+// SPIN-LOCKING MECHANISMS
 
 pub const SpinLock = struct {
     inner: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
@@ -46,6 +46,3 @@ pub const SpinSharedLock = struct {
         _ = self.inner.fetchSub(1, .release);
     }
 };
-
-pub const Lock = SpinLock;
-pub const SharedLock = SpinSharedLock;

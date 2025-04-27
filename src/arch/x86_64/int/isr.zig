@@ -5,6 +5,8 @@
 
 const std = @import("std");
 const idt = @import("idt.zig");
+const gdt = @import("../gdt.zig");
+const memory = @import("../../../memory.zig");
 
 /// Interrupt Stack Frame.
 pub const InterruptStack = packed struct {
@@ -29,12 +31,17 @@ pub const InterruptStack = packed struct {
     ss: u64,
 };
 
-/// Pointer to the stack that will be used by the kernel to handle interrupts.
-/// Referenced from assembly (`isr_stubs.s`).
-export var kernel_stack: *u64 = undefined;
 /// Pointer to the stack that was in use when an interrupt occurred.
 /// Referenced from assembly (`isr_stubs.s`).
 pub export var context: *InterruptStack = undefined;
+
+var kernel_stacks_init: [1]*u64 = .{undefined};
+var kernel_stacks: []*u64 = kernel_stacks_init[0..];
+/// Returns the pointer to the stack that will be used by the kernel to handle interrupts.
+/// Referenced from assembly (`isr_stubs.s`).
+export fn getStack() *u64 {
+    return kernel_stacks[gdt.str()];
+}
 
 // Get the stack pointer.
 inline fn readRsp() u64 {
@@ -45,16 +52,22 @@ inline fn readRsp() u64 {
     return value;
 }
 
-/// Installs the Interrupt Service Routines into the IDT.
-pub fn install() void {
+// Reallocate kernel_stacks with a stack pointer for each CPU.
+pub inline fn newStacks(cpus: usize) !void {
+    kernel_stacks = try memory.allocator.alloc(*u64, cpus);
+}
+
+// Store a stack pointer for the current CPU in kernel_stacks.
+pub inline fn setupCPU(cpu: usize) void {
     // The Limine bootloader provides us with a stack that is at least 64KB.
     // We pick an address somewhere in that range to use as the kernel stack.
-    kernel_stack = @ptrFromInt(readRsp() - 0x1000);
+    kernel_stacks[cpu] = @ptrFromInt(readRsp() - 0x1000);
+}
 
+/// Installs the Interrupt Service Routines into the IDT.
+pub fn install() void {
     // Exceptions and IRQs.
     inline for (0..48) |i| {
-        // Using @extern and an inline loop to save space.
-        // Plus, it's a pretty neat feature I wanted to try out.
         const name = std.fmt.comptimePrint("isr{}", .{i});
         const func = @extern(*const IsrFunction, .{ .name = name });
         idt.setupGate(i, .kernel, func);

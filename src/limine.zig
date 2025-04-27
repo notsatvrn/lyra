@@ -275,7 +275,19 @@ pub const KernelAddressResponse = extern struct {
     virtual: u64,
 };
 
-// THREADS (multiprocessor info)
+// RSDP
+
+const RSDP = @import("acpi.zig").RSDP;
+
+pub export var rsdp linksection(".requests") =
+    Request(.{ 0xc5e77b6b397e7b43, 0x27637845accdcf3c }, RSDPResponse){};
+
+pub const RSDPResponse = extern struct {
+    revision: u64,
+    ptr: *RSDP,
+};
+
+// MULTI-PROCESSOR INFO
 
 pub export var cpus linksection(".requests") = CPUsRequest{};
 
