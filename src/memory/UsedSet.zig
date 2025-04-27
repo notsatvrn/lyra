@@ -134,24 +134,23 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
 
         const end = start + len;
         while (start < end) {
-            const unused = @min(@ctz(bits), len);
-            rem -|= unused;
+            var zeroes = @min(@ctz(bits), len);
+            rem -|= zeroes;
             if (rem == 0) {
                 self.operation(start, n, .set);
                 return start;
-            } else if (unused == len) {
+            } else if (zeroes == len) {
                 continue :for_ints;
             }
-            len -= unused;
 
             // skip used pages
-            bits = ~(bits >> @truncate(unused));
-            const used = @min(@ctz(bits), len);
-            bits = ~(bits >> @truncate(used));
-            len -= used;
+            const used_bits = ~(bits >> @truncate(zeroes));
+            zeroes += @min(@ctz(used_bits), len - zeroes);
+            bits >>= @truncate(zeroes);
 
             // reset for next iter
-            start += unused + used;
+            start += zeroes;
+            len -= zeroes;
             rem = n;
         }
     }
