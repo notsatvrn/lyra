@@ -127,34 +127,32 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
     var start: usize = 0;
     var rem: usize = n;
 
-    for (0..ints) |i| {
-        const int = self.ptr[i];
-        const len = @min(bit_rem, 64);
+    for_ints: for (0..ints) |int| {
+        var bits = self.ptr[int];
+        var len = @min(bit_rem, 64);
         bit_rem -= len;
 
-        if (int == 0) {
-            rem -|= len;
+        const end = start + len;
+        while (start < end) {
+            const unused = @min(@ctz(bits), len);
+            rem -|= unused;
             if (rem == 0) {
                 self.operation(start, n, .set);
                 return start;
-            } else continue;
-        }
+            } else if (unused == len) {
+                continue :for_ints;
+            }
+            len -= unused;
 
-        const not_int = ~int;
+            // skip used pages
+            bits = ~(bits >> @truncate(unused));
+            const used = @min(@ctz(bits), len);
+            bits = ~(bits >> @truncate(used));
+            len -= used;
 
-        // perf: skip trailing / leading used pages
-        // instrinsics are much faster than iteration
-        for (@ctz(not_int)..len - @clz(not_int)) |j| {
-            rem -= 1;
-            if ((int >> @truncate(j)) & 1 == 1) {
-                start += n - rem;
-                rem = n;
-                continue;
-            } else if (rem != 0)
-                continue;
-
-            self.operation(start, n, .set);
-            return start;
+            // reset for next iter
+            start += unused + used;
+            rem = n;
         }
     }
 
