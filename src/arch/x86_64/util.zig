@@ -70,17 +70,17 @@ pub inline fn writeRegister(comptime T: type, comptime reg: []const u8, addr: us
         u8 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
             :
             : [addr] "+m" (addr),
-              [value] "qi" (value),
+              [value] "{al}" (value),
         ),
         u16 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
             :
             : [addr] "+m" (addr),
-              [value] "ri" (value),
+              [value] "{ax}" (value),
         ),
         u32 => asm volatile ("mov %[value], %" ++ reg ++ ":%[addr]"
             :
             : [addr] "+m" (addr),
-              [value] "ri" (value),
+              [value] "{eax}" (value),
         ),
         else => @compileError("invalid type (must be u8, u16, u32)"),
     }
@@ -108,19 +108,19 @@ pub inline fn setRegister(comptime T: type, comptime reg: []const u8, value: T) 
     switch (T) {
         u8 => asm volatile ("mov %[value], %" ++ reg
             :
-            : [value] "qi" (value),
+            : [value] "{al}" (value),
         ),
         u16 => asm volatile ("mov %[value], %" ++ reg
             :
-            : [value] "ri" (value),
+            : [value] "{ax}" (value),
         ),
         u32 => asm volatile ("mov %[value], %" ++ reg
             :
-            : [value] "ri" (value),
+            : [value] "{eax}" (value),
         ),
         u64 => asm volatile ("mov %[value], %" ++ reg
             :
-            : [value] "ri" (value),
+            : [value] "{rax}" (value),
         ),
         else => @compileError("invalid type (must be u8, u16, u32, u64)"),
     }

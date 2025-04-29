@@ -17,7 +17,3 @@ pub inline fn setPITDivisor(divisor: u16) void {
     io.out(u8, 0x40, @truncate(divisor));
     io.out(u8, 0x40, @truncate(divisor >> 8));
 }
-
-pub fn setSpeed(hz: f64) void {
-    setPITDivisor(hzToPITDivisor(hz));
-}

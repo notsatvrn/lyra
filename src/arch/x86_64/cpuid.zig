@@ -11,6 +11,7 @@ pub const Features = struct {
     hypervisor: bool,
 
     // SSE & FPU
+    xsave: bool,
     osxsave: bool,
 
     // AVX(2)
@@ -94,9 +95,6 @@ inline fn parseVendor(int: u96) Vendor {
     };
 }
 
-var model_ints: [12]u32 = @splat(0);
-pub var model: []const u8 = "";
-
 // PARSE CPUID
 
 pub fn identify() void {
@@ -110,6 +108,7 @@ pub fn identify() void {
     features.pml5 = cpuid.extended_0.ecx.la57;
     features.tsc = cpuid.basic.edx.tsc;
     // SSE & FPU features
+    features.xsave = cpuid.basic.ecx.xsave;
     features.osxsave = cpuid.basic.ecx.osxsave;
     // AVX(2) features
     features.avx = cpuid.basic.ecx.avx;
@@ -199,8 +198,9 @@ pub fn identify() void {
             ::: "rax");
     }
 
-    // FIXME: #UD on some systems
-    if (false and features.avx) {
+    // XSAVE needed for xgetbv/xsetbv
+    // TODO: can we do this w/o XSAVE?
+    if (features.xsave and features.avx) {
         // https://osdev.wiki/wiki/SSE#AVX_2
         asm volatile (
             \\.intel_syntax noprefix
@@ -232,50 +232,4 @@ pub fn identify() void {
         @as(u96, ebx);
 
     vendor = parseVendor(value);
-
-    // read CPU model string
-
-    var eax1: u32 = 0x80000002;
-    var ebx1: u32 = 0;
-    var ecx1: u32 = 0;
-    var edx1: u32 = 0;
-    asm volatile ("cpuid"
-        : [_] "={edx}" (edx1),
-          [_] "={ecx}" (ecx1),
-          [_] "={ebx}" (ebx1),
-          [_] "={eax}" (eax1),
-    );
-
-    var eax2: u32 = 0x80000003;
-    var ebx2: u32 = 0;
-    var ecx2: u32 = 0;
-    var edx2: u32 = 0;
-    asm volatile ("cpuid"
-        : [_] "={edx}" (edx2),
-          [_] "={ecx}" (ecx2),
-          [_] "={ebx}" (ebx2),
-          [_] "={eax}" (eax2),
-    );
-
-    var eax3: u32 = 0x80000004;
-    var ebx3: u32 = 0;
-    var ecx3: u32 = 0;
-    var edx3: u32 = 0;
-    asm volatile ("cpuid"
-        : [_] "={edx}" (edx3),
-          [_] "={ecx}" (ecx3),
-          [_] "={ebx}" (ebx3),
-          [_] "={eax}" (eax3),
-    );
-
-    model_ints = .{ eax1, ebx1, ecx1, edx1, eax2, ebx2, ecx2, edx2, eax3, ebx3, ecx3, edx3 };
-    model = @ptrCast(model_ints[0..12]);
-    if (false) {
-        for (0..model.len) |i| {
-            if (model[i] == 0) {
-                model = model[0..i];
-                break;
-            }
-        }
-    }
 }

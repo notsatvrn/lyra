@@ -48,7 +48,7 @@ pub inline fn bootldrName() []const u8 {
 // FRAMEBUFFER
 
 pub export var fb linksection(".requests") =
-    Request(.{ 0x9d5827dcd881dd75, 0xa3148604f6fab11b }, FramebufferResponse){};
+    Request(.{ 0x9d5827dcd881dd75, 0xa3148604f6fab11b }, FramebufferResponse){ .revision = 1 };
 
 pub const FramebufferResponse = extern struct {
     revision: u64,
@@ -156,6 +156,22 @@ pub inline fn convertPointer(ptr: anytype) @TypeOf(ptr) {
     const addr = @intFromPtr(ptr) | hhdm.response.offset;
     return @ptrFromInt(addr);
 }
+
+// PAGING MODE
+
+pub export var paging_mode linksection(".requests") = PagingModeRequest{};
+
+pub const PagingModeRequest = extern struct {
+    id: [4]u64 = common_magic ++ .{ 0x95c1a0edab0944cb, 0xa4e5cb3842f7488a },
+    revision: u64 = 0,
+    response: *const CPUsResponse = undefined,
+    mode: u64 = if (builtin.cpu.arch == .riscv64) 2 else 1,
+};
+
+pub const PagingModeResponse = extern struct {
+    revision: u64,
+    mode: u64,
+};
 
 // SMBIOS
 

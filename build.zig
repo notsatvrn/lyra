@@ -20,8 +20,6 @@ pub fn build(b: *std.Build) void {
             // Enable software floating point instead.
             var features_add = FeatureSet.empty;
             features_add.addFeature(@intFromEnum(Feature.soft_float));
-            // Require some modern CPU features for optimization.
-            features_add.addFeature(@intFromEnum(Feature.popcnt));
 
             break :x86_64 .{ features_add, features_sub };
         },

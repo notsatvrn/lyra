@@ -49,7 +49,8 @@ export fn _start() callconv(.c) noreturn {
 
     tty.clear();
     arch.boot.setup();
-    arch.paging.saveTable();
+    // sanity check, should always work
+    arch.paging.store(arch.paging.load());
     memory.init();
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
     arch.util.enableInterrupts();
@@ -87,28 +88,14 @@ export fn _start() callconv(.c) noreturn {
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
     acpi.sdt_start = limine.rsdp.response.ptr.sdt();
 
-    //arch.timing.setSpeed(500.0);
-    //arch.timing.setHandler(tickHandler);
-
     while (true) arch.util.wfi();
-}
-
-var tick: usize = 0;
-inline fn tickHandler() void {
-    const cpu = arch.getCPU();
-    logger.info("tick on cpu {}", .{cpu});
-
-    if (cpu == 0) {
-        tick += 1;
-        logger.info("tick #{}", .{tick});
-    }
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS
 
 pub const std_options = std.Options{
-    .page_size_max = memory.page_size,
-    .page_size_min = memory.page_size,
+    .page_size_max = memory.max_page_size,
+    .page_size_min = memory.min_page_size,
 };
 
 pub const os = struct {

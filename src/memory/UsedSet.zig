@@ -109,21 +109,42 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
 
 // CLAIM RANGE (ALLOCATION)
 
+// allocate from the tail (fast)
+pub fn claimRangeFast(self: *Self, n: usize) ?usize {
+    if (self.len - self.tail < n) return null;
+
+    defer self.tail += n;
+    self.operation(self.tail, n, .set);
+    return self.tail;
+}
+
+// allocate from the start
 pub fn claimRange(self: *Self, n: usize) ?usize {
     if (self.len - self.used < n) return null;
 
-    // allocate from the tail (fast)
-
-    if (self.len - self.tail >= n) {
-        defer self.tail += n;
-        self.operation(self.tail, n, .set);
-        return self.tail;
-    }
-
-    // allocate from the start
-
     const ints = (self.len + 63) / 64;
     var bit_rem = self.len;
+
+    // fast path: only one page
+    if (n == 1) {
+        for (0..ints) |int| {
+            const bits = self.ptr[int];
+
+            if (bit_rem < 64) {
+                @branchHint(.unlikely);
+                const shift: u6 = @truncate(bit_rem);
+                const mask = (@as(u64, 1) << shift) - 1;
+                // last int, just return, region is full
+                if (bits & mask == mask) return null;
+            } else if (bits == ~@as(u64, 0)) continue;
+
+            // ctz of ~bits = pages until first unused page
+            self.operation((int * 64) + @ctz(~bits), 1, .set);
+        }
+
+        return null;
+    }
+
     var start: usize = 0;
     var rem: usize = n;
 
