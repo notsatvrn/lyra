@@ -1,57 +1,53 @@
 const std = @import("std");
 
-// HSL
-
-pub const HSL = packed struct {
+pub const Hsl = packed struct {
     h: f64,
     s: f64,
     l: f64,
 
-    pub inline fn dim(self: HSL) HSL {
+    pub inline fn dim(self: Hsl) Hsl {
         return .{ .h = self.h, .s = self.s * 0.75, .l = self.l * 0.75 };
     }
 
-    // RGB CONVERSIONS
+    // CONVERSIONS
 
-    pub inline fn toRGB(self: HSL) RGB {
-        return RGB.fromHSL(self);
+    pub inline fn toRgb(self: Hsl) Rgb {
+        return Rgb.fromHsl(self);
     }
 
-    pub inline fn fromRGB(rgb: RGB) HSL {
-        return rgb.toHSL();
+    pub inline fn fromRgb(rgb: Rgb) Hsl {
+        return rgb.toHsl();
     }
 };
 
-// RGB
-
-pub const RGBSize = enum(u16) {
+pub const RgbSize = enum(u16) {
     // "true color"
     bpp24 = 24,
     // "deep color"
     bpp36 = 36,
 };
 
-pub const RGB = union(RGBSize) {
-    bpp24: BPP24,
-    bpp36: BPP36,
+pub const Rgb = union(RgbSize) {
+    bpp24: Bpp24,
+    bpp36: Bpp36,
 
-    pub fn SizePayload(size: RGBSize) type {
+    pub fn SizePayload(size: RgbSize) type {
         return switch (size) {
-            .bpp24 => BPP24,
-            .bpp36 => BPP36,
+            .bpp24 => Bpp24,
+            .bpp36 => Bpp36,
         };
     }
 
-    pub const BPP24 = struct {
+    pub const Bpp24 = struct {
         b: u8,
         g: u8,
         r: u8,
 
-        pub inline fn toGeneric(self: BPP24) RGB {
+        pub inline fn toGeneric(self: Bpp24) Rgb {
             return .{ .bpp24 = self };
         }
 
-        pub inline fn fromHex(hex: u24) BPP24 {
+        pub inline fn fromHex(hex: u24) Bpp24 {
             return .{
                 .r = @truncate(hex >> 16),
                 .g = @truncate(hex >> 8),
@@ -61,12 +57,12 @@ pub const RGB = union(RGBSize) {
     };
 
     // HSL conversion algos from https://gist.github.com/ciembor/1494530
-    pub const BPP36 = struct {
+    pub const Bpp36 = struct {
         b: u12,
         g: u12,
         r: u12,
 
-        pub inline fn toGeneric(self: BPP36) RGB {
+        pub inline fn toGeneric(self: Bpp36) Rgb {
             return .{ .bpp36 = self };
         }
 
@@ -75,9 +71,9 @@ pub const RGB = union(RGBSize) {
         const cmax = std.math.maxInt(u12);
         const cmax_f: f64 = @floatFromInt(cmax);
 
-        // HSL -> RGB
+        // Hsl -> Rgb
 
-        pub fn toHSL(self: BPP36) HSL {
+        pub fn toHsl(self: Bpp36) Hsl {
             const r = @as(f64, @floatFromInt(self.r)) / cmax_f;
             const g = @as(f64, @floatFromInt(self.g)) / cmax_f;
             const b = @as(f64, @floatFromInt(self.b)) / cmax_f;
@@ -112,9 +108,9 @@ pub const RGB = union(RGBSize) {
             return .{ .h = h, .s = s, .l = l };
         }
 
-        // RGB -> HSL
+        // Rgb -> Hsl
 
-        fn hueToRGB(p: f64, q: f64, t: f64) f64 {
+        fn hueToRgb(p: f64, q: f64, t: f64) f64 {
             var t2 = t;
             if (t < 0) t2 += 1;
             if (t > 1) t2 -= 1;
@@ -124,8 +120,8 @@ pub const RGB = union(RGBSize) {
             return p;
         }
 
-        pub fn fromHSL(hsl: HSL) BPP36 {
-            var result = BPP36{ .r = 0, .g = 0, .b = 0 };
+        pub fn fromHsl(hsl: Hsl) Bpp36 {
+            var result = Bpp36{ .r = 0, .g = 0, .b = 0 };
 
             if (hsl.s == 0) {
                 result.r = @intFromFloat(hsl.l * cmax_f);
@@ -138,9 +134,9 @@ pub const RGB = union(RGBSize) {
                 const q = if (l < 0.5) l * (1 + s) else l + s - l * s;
                 const p = 2 * l - q;
 
-                result.r = @intFromFloat(hueToRGB(p, q, hsl.h + 1.0 / 3.0) * cmax_f);
-                result.g = @intFromFloat(hueToRGB(p, q, hsl.h) * cmax_f);
-                result.b = @intFromFloat(hueToRGB(p, q, hsl.h - 1.0 / 3.0) * cmax_f);
+                result.r = @intFromFloat(hueToRgb(p, q, hsl.h + 1.0 / 3.0) * cmax_f);
+                result.g = @intFromFloat(hueToRgb(p, q, hsl.h) * cmax_f);
+                result.b = @intFromFloat(hueToRgb(p, q, hsl.h - 1.0 / 3.0) * cmax_f);
             }
 
             return result;
@@ -149,21 +145,21 @@ pub const RGB = union(RGBSize) {
 
     // COMMON CONVERSIONS
 
-    pub inline fn toHSL(self: RGB) HSL {
-        return self.getSize(.bpp36).toHSL();
+    pub inline fn toHsl(self: Rgb) Hsl {
+        return self.getSize(.bpp36).toHsl();
     }
 
-    pub inline fn fromHSL(hsl: HSL) RGB {
-        return .{ .bpp36 = BPP36.fromHSL(hsl) };
+    pub inline fn fromHsl(hsl: Hsl) Rgb {
+        return .{ .bpp36 = Bpp36.fromHsl(hsl) };
     }
 
-    pub inline fn fromHex(hex: u24) RGB {
-        return .{ .bpp24 = BPP24.fromHex(hex) };
+    pub inline fn fromHex(hex: u24) Rgb {
+        return .{ .bpp24 = Bpp24.fromHex(hex) };
     }
 
     // SCALING CONVERSIONS
 
-    pub inline fn getSize(self: RGB, comptime size: RGBSize) SizePayload(size) {
+    pub inline fn getSize(self: Rgb, comptime size: RgbSize) SizePayload(size) {
         switch (self) {
             inline else => |v, src_size| {
                 if (src_size == size) return v;

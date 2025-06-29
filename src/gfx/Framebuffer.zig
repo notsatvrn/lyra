@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-const RGB = @import("color.zig").RGB;
+const Rgb = @import("color.zig").Rgb;
 
 const limine = @import("../limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
@@ -79,7 +79,7 @@ pub fn sameEncoding(self: Self, other: *const Self) bool {
 
 // WRITING PIXELS
 
-pub fn makePixel(self: Self, color: RGB.BPP36) u64 {
+pub fn makePixel(self: Self, color: Rgb.Bpp36) u64 {
     var r = @as(u64, color.r);
     var g = @as(u64, color.g);
     var b = @as(u64, color.b);
@@ -136,7 +136,7 @@ pub inline fn drawRect(self: Self, pos: usize, pixel: u64, w: usize, h: usize) v
     }
 }
 
-pub inline fn writeColor(self: Self, pos: usize, color: RGB.BPP36) void {
+pub inline fn writeColor(self: Self, pos: usize, color: Rgb.Bpp36) void {
     self.writePixel(pos, self.makePixel(color));
 }
 
@@ -146,7 +146,7 @@ pub inline fn clear(self: Self) void {
 
 // READING PIXELS
 
-pub fn readColor(self: Self, pos: usize) RGB.BPP36 {
+pub fn readColor(self: Self, pos: usize) Rgb.Bpp36 {
     var pixel: u64 = 0;
 
     switch (self.bytes) {

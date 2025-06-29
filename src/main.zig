@@ -55,6 +55,7 @@ export fn _start() callconv(.c) noreturn {
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
     arch.util.enableInterrupts();
     clock.setup();
+    @import("memory/bench.zig").run();
 
     if (framebuffers.count != 0) fbsetup: {
         // set current framebuffer to mirror a virtual framebuffer (double-buffering)

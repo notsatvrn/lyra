@@ -1,25 +1,25 @@
 const std = @import("std");
 
-pub const RSDP = extern struct {
+pub const Rsdp = extern struct {
     signature: [8]u8,
     checksum: u8,
     oem_id: [6]u8,
     revision: u8,
     rsdt_addr: u32,
 
-    pub inline fn extended(self: *const RSDP) ?*const XSDP {
+    pub inline fn extended(self: *const Rsdp) ?*const Xsdp {
         if (self.revision != 2) return null;
         return @ptrCast(@alignCast(self));
     }
 
-    pub inline fn sdt(self: *const RSDP) *const SDTHeader {
+    pub inline fn sdt(self: *const Rsdp) *const SdtHeader {
         if (self.extended()) |x|
             return @ptrFromInt(x.xsdt_addr);
         return @ptrFromInt(self.rsdt_addr);
     }
 };
 
-pub const XSDP = extern struct {
+pub const Xsdp = extern struct {
     signature: [8]u8,
     checksum: u8,
     oem_id: [6]u8,
@@ -34,9 +34,9 @@ pub const XSDP = extern struct {
 
 // https://wiki.osdev.org/RSDT & https://wiki.osdev.org/XSDT
 
-pub var sdt_start: *const SDTHeader = undefined;
+pub var sdt_start: *const SdtHeader = undefined;
 
-pub const SDTHeader = extern struct {
+pub const SdtHeader = extern struct {
     signature: [4]u8,
     length: u32,
     revision: u8,
@@ -47,8 +47,8 @@ pub const SDTHeader = extern struct {
     creator_id: u32,
     creator_revision: u32,
 
-    pub fn doChecksum(self: *const SDTHeader) bool {
-        const ptr: [*]const SDTHeader = @ptrCast(self);
+    pub fn doChecksum(self: *const SdtHeader) bool {
+        const ptr: [*]const SdtHeader = @ptrCast(self);
         var sum: u8 = 0;
 
         for (0..self.length) |i|

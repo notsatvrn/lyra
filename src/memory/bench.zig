@@ -7,7 +7,7 @@ const logger = log.Logger{ .name = "memory/bench" };
 const memory = @import("../memory.zig");
 const KB = memory.KB;
 const GB = memory.GB;
-const page_size = memory.page_size;
+const page_bytes = memory.min_page_size;
 const unused = memory.unused;
 const page_allocator = memory.page_allocator;
 
@@ -63,7 +63,7 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
     var random = rng.random();
     var bytes_total: usize = 0;
 
-    var storage = page_allocator.alloc(memory.Block, divisor) catch @panic("failed to build bench storage");
+    var storage = page_allocator.alloc(struct { [*]u8, usize }, divisor) catch @panic("failed to build bench storage");
     var tables = page_allocator.alloc([]usize, iters) catch @panic("failed to build RNG table directory");
     for (0..iters) |i| tables[i] = buildRNGTable(divisor);
 
@@ -79,11 +79,14 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
                     const pages_f = percent * @as(f64, @floatFromInt(amt));
                     pages = @intFromFloat(pages_f);
                 }
-                bytes_total += pages * page_size;
-                storage[i] = memory.allocBlock(pages).?[0..pages];
+                bytes_total += pages * page_bytes;
+                storage[i] = .{ memory.map(.small, pages).?, pages };
             }
-            for (0..divisor) |i|
-                _ = memory.freeBlock(storage[table[i]]);
+            for (0..divisor) |i| {
+                const ptr = storage[table[i]][0];
+                const pages = storage[table[i]][1];
+                _ = memory.unmap(ptr, .small, pages);
+            }
         }
     }
 
@@ -104,9 +107,9 @@ fn benchSeqRand(comptime pages: usize) void {
     const size_seq = (unused() / 2) / pages;
     const outer_iter = pages * 25;
 
-    logger.debug("sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_size / KB), size_seq * outer_iter });
+    logger.debug("sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_bytes / KB), size_seq * outer_iter });
 
-    var storage = page_allocator.alloc(memory.Ptr, size_seq) catch @panic("failed to build bench storage");
+    var storage = page_allocator.alloc([*]u8, size_seq) catch @panic("failed to build bench storage");
     var tables = page_allocator.alloc([]usize, outer_iter) catch @panic("failed to build RNG table directory");
     for (0..outer_iter) |i| tables[i] = buildRNGTable(size_seq);
 
@@ -114,15 +117,15 @@ fn benchSeqRand(comptime pages: usize) void {
     for (0..outer_iter) |j| {
         const table = tables[j];
         for (0..size_seq) |i|
-            storage[i] = memory.allocBlock(pages) orelse @panic("failed to allocate page");
+            storage[i] = memory.map(.small, pages) orelse @panic("failed to allocate page");
         for (0..size_seq) |i|
-            _ = memory.freeBlock(storage[table[i]][0..pages]);
+            _ = memory.unmap(storage[table[i]], .small, pages);
     }
     const end = clock.nanoSinceBoot();
 
     const p = pages * size_seq * outer_iter;
     const s = @as(f64, @floatFromInt(end - start)) / std.time.ns_per_s;
-    const bps = (@as(f64, @floatFromInt(p)) / s) * page_size;
+    const bps = (@as(f64, @floatFromInt(p)) / s) * page_bytes;
 
     logger.debug("done ({d:.3}GB/s)", .{bps / GB});
 

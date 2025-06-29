@@ -114,15 +114,15 @@ pub const Framebuffer = extern struct {
 // MEMORY MAP
 
 pub export var mmap linksection(".requests") =
-    Request(.{ 0x67cf3d9d378a806f, 0xe304acdfc50c3c62 }, MMapResponse){};
+    Request(.{ 0x67cf3d9d378a806f, 0xe304acdfc50c3c62 }, MemoryMapResponse){};
 
-pub const MMapResponse = extern struct {
+pub const MemoryMapResponse = extern struct {
     revision: u64,
     count: u64,
-    entries: [*]const *MMapEntry,
+    entries: [*]const *MemoryMapEntry,
 };
 
-pub const MMapEntry = extern struct {
+pub const MemoryMapEntry = extern struct {
     ptr: [*]u8,
     len: u64,
     type: Type,
@@ -142,9 +142,9 @@ pub const MMapEntry = extern struct {
 // HHDM LOCATION
 
 pub export var hhdm linksection(".requests") =
-    Request(.{ 0x48dcf1cb8ad2b852, 0x63984e959a98244b }, HHDMResponse){};
+    Request(.{ 0x48dcf1cb8ad2b852, 0x63984e959a98244b }, HhdmResponse){};
 
-pub const HHDMResponse = extern struct {
+pub const HhdmResponse = extern struct {
     revision: u64,
     offset: u64,
 };
@@ -164,7 +164,7 @@ pub export var paging_mode linksection(".requests") = PagingModeRequest{};
 pub const PagingModeRequest = extern struct {
     id: [4]u64 = common_magic ++ .{ 0x95c1a0edab0944cb, 0xa4e5cb3842f7488a },
     revision: u64 = 0,
-    response: *const CPUsResponse = undefined,
+    response: *const PagingModeResponse = undefined,
     mode: u64 = if (builtin.cpu.arch == .riscv64) 2 else 1,
 };
 
@@ -176,9 +176,9 @@ pub const PagingModeResponse = extern struct {
 // SMBIOS
 
 pub export var smbios linksection(".requests") =
-    Request(.{ 0x9e9046f11e095391, 0xaa4a520fefbde5ee }, SMBIOSResponse){};
+    Request(.{ 0x9e9046f11e095391, 0xaa4a520fefbde5ee }, SmbiosResponse){};
 
-pub const SMBIOSResponse = extern struct {
+pub const SmbiosResponse = extern struct {
     revision: u64,
     entry_32: *const void,
     entry_64: *const void,
@@ -197,21 +197,21 @@ pub const DeviceTreeResponse = extern struct {
 // EFI SYSTEM TABLE
 
 pub export var efi_system_table linksection(".requests") =
-    Request(.{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc }, EFISystemTableResponse){};
+    Request(.{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc }, EfiSystemTableResponse){};
 
-pub const EFISystemTableResponse = extern struct {
+pub const EfiSystemTableResponse = extern struct {
     revision: u64,
     ptr: *std.os.uefi.tables.SystemTable,
 };
 
 // EFI MEMORY MAP
 
-const EFIMemoryDesc = std.os.uefi.tables.MemoryDescriptor;
+const EfiMemoryDesc = std.os.uefi.tables.MemoryDescriptor;
 
 pub export var efi_mmap linksection(".requests") =
-    Request(.{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 }, EFIMMapResponse){};
+    Request(.{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 }, EfiMemoryMapResponse){};
 
-pub const EFIMMapResponse = extern struct {
+pub const EfiMemoryMapResponse = extern struct {
     revision: u64,
     mmap: u64,
     mmap_size: u64,
@@ -219,17 +219,17 @@ pub const EFIMMapResponse = extern struct {
     desc_version: u64,
 };
 
-pub const EFIMMapIterator = struct {
+pub const EfiMemoryMapIterator = struct {
     addr: u64 = 0,
 
-    pub fn next(self: *EFIMMapIterator) ?*EFIMemoryDesc {
+    pub fn next(self: *EfiMemoryMapIterator) ?*EfiMemoryDesc {
         if (self.addr >= (efi_mmap.response.mmap + efi_mmap.response.mmap_size)) {
             return null;
         } else if (self.addr == 0) {
             self.addr = efi_mmap.response.mmap;
         }
 
-        const desc: *EFIMemoryDesc = @ptrFromInt(self.addr);
+        const desc: *EfiMemoryDesc = @ptrFromInt(self.addr);
         self.addr += efi_mmap.response.desc_size;
         return desc;
     }
@@ -293,86 +293,86 @@ pub const KernelAddressResponse = extern struct {
 
 // RSDP
 
-const RSDP = @import("acpi.zig").RSDP;
+const Rsdp = @import("acpi.zig").Rsdp;
 
 pub export var rsdp linksection(".requests") =
-    Request(.{ 0xc5e77b6b397e7b43, 0x27637845accdcf3c }, RSDPResponse){};
+    Request(.{ 0xc5e77b6b397e7b43, 0x27637845accdcf3c }, RsdpResponse){};
 
-pub const RSDPResponse = extern struct {
+pub const RsdpResponse = extern struct {
     revision: u64,
-    ptr: *RSDP,
+    ptr: *Rsdp,
 };
 
 // MULTI-PROCESSOR INFO
 
-pub export var cpus linksection(".requests") = CPUsRequest{};
+pub export var cpus linksection(".requests") = CpusRequest{};
 
-pub const CPUsRequest = extern struct {
+pub const CpusRequest = extern struct {
     id: [4]u64 = common_magic ++ .{ 0x95a67b819a1b857e, 0xa0b61b723b6a73e0 },
     revision: u64 = 0,
-    response: *const CPUsResponse = undefined,
+    response: *const CpusResponse = undefined,
     flags: u64 = 0,
 };
 
-pub const CPUsResponse = switch (builtin.cpu.arch) {
-    .riscv64 => CPUsResponseRiscV64,
+pub const CpusResponse = switch (builtin.cpu.arch) {
+    .riscv64 => CpusResponseRiscV64,
     else => extern struct {
         revision: u64,
         flags: u32,
         bsp_id: u32,
         count: u64,
-        cpus: [*]const *CPU,
+        cpus: [*]const *Cpu,
     },
 };
 
-pub const CPU = switch (builtin.cpu.arch) {
-    .x86_64 => CPUX86,
-    .aarch64 => CPUAArch64,
-    .riscv64 => CPURiscV64,
+pub const Cpu = switch (builtin.cpu.arch) {
+    .x86_64 => CpuX86,
+    .aarch64 => CpuAArch64,
+    .riscv64 => CpuRiscV64,
     else => unreachable,
 };
 
-pub const CPUEntry = *const fn (*CPU) callconv(.c) noreturn;
+pub const CpuEntry = *const fn (*Cpu) callconv(.c) noreturn;
 
-pub inline fn jumpCPU(cpu: *CPU, entry: CPUEntry) void {
-    @atomicStore(CPUEntry, &cpu.goto_addr, entry, .seq_cst);
+pub inline fn jumpCpu(cpu: *Cpu, entry: CpuEntry) void {
+    @atomicStore(CpuEntry, &cpu.goto_addr, entry, .seq_cst);
 }
 
 // MP: x86-64
 
-const CPUX86 = extern struct {
+const CpuX86 = extern struct {
     acpi_id: u32,
     id: u32,
     reserved: u64,
-    goto_addr: CPUEntry,
+    goto_addr: CpuEntry,
     extra: u64,
 };
 
 // MP: aarch64
 
-const CPUAArch64 = extern struct {
+const CpuAArch64 = extern struct {
     acpi_id: u32,
     reserved1: u32,
     id: u64,
     reserved: u64,
-    goto_addr: CPUEntry,
+    goto_addr: CpuEntry,
     extra: u64,
 };
 
 // MP: riscv64
 
-const CPUsResponseRiscV64 = extern struct {
+const CpusResponseRiscV64 = extern struct {
     revision: u64,
     flags: u64,
     bsp_id: u64,
     count: u64,
-    cpus: [*]const *CPU,
+    cpus: [*]const *Cpu,
 };
 
-const CPURiscV64 = extern struct {
+const CpuRiscV64 = extern struct {
     acpi_id: u64,
     id: u64,
     reserved: u64,
-    goto_addr: CPUEntry,
+    goto_addr: CpuEntry,
     extra: u64,
 };

@@ -114,19 +114,19 @@ pub const Effects = struct {
 
 // ANSI ESCAPE CODES
 
-pub const ANSI = union(enum) {
-    sgr: SGR,
+pub const Ansi = union(enum) {
+    sgr: Sgr,
 
     // Set Graphics Rendition
 
-    pub const SGR = union(enum) {
+    pub const Sgr = union(enum) {
         reset,
         set_color: struct { part: ColorPart, color: Color },
         set_effect: StatefulEffect,
         unset_effect: Effect,
 
         pub fn format(
-            self: SGR,
+            self: Sgr,
             comptime fmt: []const u8,
             options: std.fmt.FormatOptions,
             writer: anytype,
@@ -148,7 +148,7 @@ pub const ANSI = union(enum) {
     pub const esc = '\x1B';
 
     pub fn format(
-        self: ANSI,
+        self: Ansi,
         comptime fmt: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
@@ -165,9 +165,9 @@ pub const ANSI = union(enum) {
 
     // quick constructors
 
-    pub const reset = ANSI{ .sgr = .reset };
+    pub const reset = Ansi{ .sgr = .reset };
 
-    pub inline fn setColor(part: ColorPart, color: Color) ANSI {
+    pub inline fn setColor(part: ColorPart, color: Color) Ansi {
         return .{ .sgr = .{ .set_color = .{ .part = part, .color = color } } };
     }
 };

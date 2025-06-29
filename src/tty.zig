@@ -13,7 +13,7 @@ const Palettes = colors.Palettes;
 pub const effects = @import("tty/effects.zig");
 const ColorPart = effects.ColorPart;
 const Effects = effects.Effects;
-const ANSI = effects.ANSI;
+const Ansi = effects.Ansi;
 
 const limine = @import("limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
@@ -72,7 +72,7 @@ pub inline fn printf(comptime fmt: []const u8, args: anytype) void {
 pub var render_ansi = false;
 
 // The ANSI escape parser used by all TTY implementations
-pub const ANSIParser = struct {
+pub const AnsiParser = struct {
     parsing: ?Parsing = null,
     nop: bool = false,
 
@@ -92,7 +92,7 @@ pub const ANSIParser = struct {
                     else => {},
                 }
             }
-        } else if (char == ANSI.esc) {
+        } else if (char == Ansi.esc) {
             self.parsing = .{ .nop = self.nop or !render_ansi };
         } else return false;
 
@@ -111,7 +111,7 @@ pub const RenderState = struct {
     effects  : Effects  = .{},
     palettes : Palettes = .{},
 
-    ansi_parser : ANSIParser = .{},
+    ansi_parser : AnsiParser = .{},
     // zig fmt: on
 
     const Self = @This();

@@ -19,8 +19,8 @@ pub const util = arch.util;
 
 pub const text_mode: ?type = if (@hasDecl(arch, "text_mode")) arch.text_mode else null;
 
-pub const prepCPUs = arch.prepCPUs;
-pub const setCPU = arch.setCPU;
-pub const getCPU = arch.getCPU;
+pub const prepCpus = arch.prepCpus;
+pub const setCpu = arch.setCpu;
+pub const getCpu = arch.getCpu;
 
 pub const pciDetect = arch.pciDetect;

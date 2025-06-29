@@ -61,7 +61,7 @@ pub const Region = struct {
 
     // OPERATIONS
 
-    pub fn allocBlock(self: *Self, size: PageSize, len: usize, comptime fast: bool) ?[*]u8 {
+    pub fn map(self: *Self, size: PageSize, len: usize, comptime fast: bool) ?[*]u8 {
         self.lock.lock();
         defer self.lock.unlock();
         _ = size; // TODO: hugepages
@@ -74,7 +74,7 @@ pub const Region = struct {
         return @ptrCast(self.ptr + (index * min_page_size));
     }
 
-    pub fn resizeBlock(self: *Self, ptr: [*]u8, size: PageSize, len: usize, new_len: usize, comptime may_move: bool) ?[*]u8 {
+    pub fn remap(self: *Self, ptr: [*]u8, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
         assert(@intFromPtr(ptr) >= @intFromPtr(self.ptr));
 
         if (new_len <= len) return ptr;
@@ -95,14 +95,14 @@ pub const Region = struct {
         return @ptrCast(new_block);
     }
 
-    pub fn freeBlock(self: *Self, ptr: [*]u8, size: PageSize, len: usize) void {
+    pub fn unmap(self: *Self, ptr: [*]u8, size: PageSize, len: usize) void {
         assert(@intFromPtr(ptr) >= @intFromPtr(self.ptr));
 
         self.lock.lock();
         defer self.lock.unlock();
         _ = size; // TODO: hugepages
 
-        self.set.unclaimRange(ptr - self.ptr, len);
+        self.set.unclaimRange((ptr - self.ptr) / min_page_size, len);
     }
 };
 
@@ -216,7 +216,7 @@ pub inline fn unused() usize {
 
 // search in regions until we find one containing an existing block
 // may return null if no regions contain the block (rare but possible)
-inline fn findBlockRegion(ptr: [*]u8) ?*Region {
+inline fn findRegion(ptr: [*]u8) ?*Region {
     const addr = @intFromPtr(ptr);
     for (0..regions.len) |i| {
         const region = &regions[i];
@@ -236,23 +236,23 @@ inline fn findBlockRegion(ptr: [*]u8) ?*Region {
 
 // OPERATIONS
 
-pub fn allocBlock(size: PageSize, len: usize) ?[*]u8 {
+pub fn map(size: PageSize, len: usize) ?[*]u8 {
     // try all regions until we can allocate fast, then slow only if needed
-    for (regions) |*region| if (region.allocBlock(size, len, true)) |ptr| return ptr;
-    for (regions) |*region| if (region.allocBlock(size, len, false)) |ptr| return ptr;
+    for (regions) |*region| if (region.map(size, len, true)) |ptr| return ptr;
+    for (regions) |*region| if (region.map(size, len, false)) |ptr| return ptr;
 
     return null;
 }
 
-pub fn resizeBlock(ptr: [*]u8, size: PageSize, len: usize, new_len: usize, comptime may_move: bool) ?[*]u8 {
+pub fn remap(ptr: [*]u8, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
     if (new_len <= len) return ptr;
-    const region = findBlockRegion(ptr) orelse return null;
-    return region.resizeBlock(ptr, size, len, new_len, may_move);
+    const region = findRegion(ptr) orelse return null;
+    return region.remap(ptr, size, len, new_len, may_move);
 }
 
-pub fn freeBlock(ptr: [*]u8, size: PageSize, len: usize) bool {
-    const region = findBlockRegion(ptr) orelse return false;
-    region.freeBlock(ptr, size, len);
+pub fn unmap(ptr: [*]u8, size: PageSize, len: usize) bool {
+    const region = findRegion(ptr) orelse return false;
+    region.unmap(ptr, size, len);
     return true;
 }
 
@@ -265,36 +265,36 @@ pub const PageAllocator = struct {
     pub const vtable = Allocator.VTable{
         .alloc = alloc,
         .resize = resize,
-        .remap = remap,
+        .remap = realloc,
         .free = free,
     };
 
     fn alloc(_: *anyopaque, n: usize, _: Alignment, _: usize) ?[*]u8 {
         assert(n > 0);
         if (n >= maxInt(usize) - min_page_size) return null;
-        const block = allocBlock(.small, pagesNeeded(n, .small));
+        const block = map(.small, pagesNeeded(n, .small));
         return @ptrCast(block orelse return null);
     }
 
-    inline fn realloc(buf: []u8, new_len: usize, comptime may_move: bool) ?[*]u8 {
+    inline fn _remap(buf: []u8, new_len: usize, may_move: bool) ?[*]u8 {
         const old_pages = pagesNeeded(buf.len, .small);
         const new_pages = pagesNeeded(new_len, .small);
-        const block = resizeBlock(buf.ptr, .small, old_pages, new_pages, may_move);
+        const block = remap(buf.ptr, .small, old_pages, new_pages, may_move);
         return @ptrCast(block orelse return null);
     }
 
     fn resize(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) bool {
-        return realloc(buf, new_len, false) != null;
+        return _remap(buf, new_len, false) != null;
     }
 
-    fn remap(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) ?[*]u8 {
-        return realloc(buf, new_len, true);
+    fn realloc(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) ?[*]u8 {
+        return _remap(buf, new_len, true);
     }
 
     fn free(_: *anyopaque, slice: []u8, _: Alignment, _: usize) void {
         const pages = pagesNeeded(slice.len, .small);
         // TODO: handle invalid frees
-        _ = freeBlock(slice.ptr, .small, pages);
+        _ = unmap(slice.ptr, .small, pages);
     }
 };
 

@@ -15,32 +15,32 @@ pub fn init() !void {
     if (cpus.cpus[0].id != cpus.bsp_id)
         @panic("cpu 0 id != bootstrap id");
 
-    try arch.prepCPUs(cpus.count);
-    arch.setCPU(0);
+    try arch.prepCpus(cpus.count);
+    arch.setCpu(0);
 
     for (0..cpus.count) |i| {
         const cpu = cpus.cpus[i];
         cpu.extra = i;
         if (cpu.id != cpus.bsp_id)
-            limine.jumpCPU(cpu, cpuEntry);
+            limine.jumpCpu(cpu, cpuEntry);
     }
 
-    logger.debug("boot cpu was {} (acpi_id: {})", .{ arch.getCPU(), info().acpi_id });
+    logger.debug("boot cpu was {} (acpi_id: {})", .{ arch.getCpu(), info().acpi_id });
 }
 
 // ENTRYPOINT
 
-pub fn cpuEntry(cpu: *const limine.CPU) callconv(.c) noreturn {
-    arch.setCPU(cpu.extra);
-    logger.debug("cpu {} online (acpi_id: {})", .{ arch.getCPU(), info().acpi_id });
+pub fn cpuEntry(cpu: *const limine.Cpu) callconv(.c) noreturn {
+    arch.setCpu(cpu.extra);
+    logger.debug("cpu {} online (acpi_id: {})", .{ arch.getCpu(), info().acpi_id });
 
     while (true) arch.util.wfi();
 }
 
 // CPU INFO
 
-pub inline fn info() *const limine.CPU {
-    return limine.cpus.response.cpus[arch.getCPU()];
+pub inline fn info() *const limine.Cpu {
+    return limine.cpus.response.cpus[arch.getCpu()];
 }
 
 // THREAD-LOCAL STORAGE
@@ -72,7 +72,7 @@ pub fn LocalStorage(comptime T: type) type {
         // GET
 
         pub inline fn get(self: *Self) *T {
-            return &self.objects[arch.getCPU()];
+            return &self.objects[arch.getCpu()];
         }
     };
 }
@@ -108,24 +108,24 @@ pub fn LockingStorage(comptime T: type) type {
 
         // LOCKING
 
-        pub inline fn lockCPU(self: *Self, cpu: usize) *T {
+        pub inline fn lockCpu(self: *Self, cpu: usize) *T {
             const object = &self.objects[cpu];
             object.lock.lock();
             return &object.value;
         }
 
         pub inline fn lock(self: *Self) *T {
-            return self.lockCPU(arch.getCPU());
+            return self.lockCpu(arch.getCpu());
         }
 
         // UNLOCKING
 
-        pub inline fn unlockCPU(self: *Self, cpu: usize) void {
+        pub inline fn unlockCpu(self: *Self, cpu: usize) void {
             self.objects[cpu].lock.unlock();
         }
 
         pub inline fn unlock(self: *Self) void {
-            self.unlockCPU(arch.getCPU());
+            self.unlockCpu(arch.getCpu());
         }
     };
 }

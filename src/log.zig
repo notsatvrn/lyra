@@ -3,7 +3,7 @@ const Level = std.log.Level;
 
 pub const tty = @import("tty.zig");
 pub const colors = tty.colors;
-pub const ANSI = tty.effects.ANSI;
+pub const Ansi = tty.effects.Ansi;
 
 const arch = @import("arch.zig");
 const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
@@ -23,7 +23,7 @@ var writer: Writer = .{ .context = void{} };
 
 inline fn timeAndReset() void {
     const sec = @as(f64, @floatFromInt(nanoSinceBoot())) / std.time.ns_per_s;
-    writer.print("{s}[{d: >12.6}] ", .{ ANSI.reset, sec }) catch unreachable;
+    writer.print("{s}[{d: >12.6}] ", .{ Ansi.reset, sec }) catch unreachable;
 }
 
 // printf unprefixed
@@ -68,7 +68,7 @@ pub const Logger = struct {
             else => {},
         }
 
-        printfu("[{s}{s}{s}] {s}: ", .{ ANSI.setColor(.foreground, .{ .basic = color }), str, ANSI.reset, self.name });
+        printfu("[{s}{s}{s}] {s}: ", .{ Ansi.setColor(.foreground, .{ .basic = color }), str, Ansi.reset, self.name });
 
         // print message
 

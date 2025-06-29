@@ -29,17 +29,17 @@ pub const text_mode = struct {
 const gdt = @import("x86_64/gdt.zig");
 const isr = @import("x86_64/int/isr.zig");
 
-pub fn prepCPUs(cpus: usize) !void {
+pub fn prepCpus(cpus: usize) !void {
     try gdt.update(cpus);
     try isr.newStacks(cpus);
 }
 
-pub fn setCPU(cpu: usize) void {
+pub fn setCpu(cpu: usize) void {
     gdt.load(cpu);
-    isr.setupCPU(cpu);
+    isr.setupCpu(cpu);
 }
 
-pub const getCPU = gdt.str;
+pub const getCpu = gdt.str;
 
 // MISCELLANEOUS STUFF
 

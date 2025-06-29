@@ -5,13 +5,13 @@ const std = @import("std");
 
 const gfx = @import("../gfx.zig");
 const Framebuffer = gfx.Framebuffer;
-const AABB = gfx.AABB;
+const Aabb = gfx.Aabb;
 
 const super = @import("../tty.zig");
 const RenderState = super.RenderState;
 const ColorPart = super.effects.ColorPart;
-const ANSI = super.effects.ANSI;
-const RGB = super.colors.RGB;
+const Ansi = super.effects.Ansi;
+const Rgb = super.colors.Rgb;
 
 const limine = @import("../limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
@@ -24,7 +24,7 @@ const font = @import("fonts.zig").oldschoolPGC.data;
 
 pub const Command = union(enum) {
     print: []const u8,
-    ansi_esc: ANSI,
+    ansi_esc: Ansi,
     scroll,
 };
 
@@ -224,7 +224,7 @@ pub const AdvancedTerminal = struct {
     // mirrored consoles
     mirrors: Mirrors = .{},
     // damage tracking
-    damage: ?AABB = null,
+    damage: ?Aabb = null,
 
     const Mirrors = std.ArrayListUnmanaged(Framebuffer);
 

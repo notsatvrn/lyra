@@ -58,7 +58,7 @@ pub inline fn newStacks(cpus: usize) !void {
 }
 
 // Store a stack pointer for the current CPU in kernel_stacks.
-pub inline fn setupCPU(cpu: usize) void {
+pub inline fn setupCpu(cpu: usize) void {
     // The Limine bootloader provides us with a stack that is at least 64KB.
     // We pick an address somewhere in that range to use as the kernel stack.
     kernel_stacks[cpu] = @ptrFromInt(readRsp() - 0x1000);

@@ -188,29 +188,23 @@ pub fn identify() void {
     if (features.osxsave) {
         // https://osdev.wiki/wiki/FPU#FPU_control
         asm volatile (
-            \\.intel_syntax noprefix
-            \\
-            \\mov rax, cr4
-            \\or ax, 1 << 18
-            \\mov cr4, rax
-            \\
-            \\.att_syntax prefix
+            \\mov %cr4, %rax
+            \\or $(1 << 18), %ax
+            \\mov %rax, %cr4
             ::: "rax");
     }
 
     // XSAVE needed for xgetbv/xsetbv
     // TODO: can we do this w/o XSAVE?
-    if (features.xsave and features.avx) {
+    // UPDATE: i guess we can't do it At All it keeps crashing
+    //if (features.xsave and features.avx) {
+    if (false) {
         // https://osdev.wiki/wiki/SSE#AVX_2
         asm volatile (
-            \\.intel_syntax noprefix
-            \\
-            \\xor rcx, rcx
+            \\xor %rcx, %rcx
             \\xgetbv
-            \\or eax, 7
+            \\or $7, %eax
             \\xsetbv
-            \\
-            \\.att_syntax prefix
             ::: "rax", "rcx", "rdx");
     }
 
