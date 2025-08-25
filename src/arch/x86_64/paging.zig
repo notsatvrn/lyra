@@ -3,6 +3,7 @@
 const std = @import("std");
 
 const util = @import("util.zig");
+const cpuid = @import("cpuid.zig");
 const limine = @import("../../limine.zig");
 const memory = @import("../../memory.zig");
 
@@ -83,17 +84,20 @@ inline fn read(table: *const PageTable, level: usize, addr: usize) ?*const PageT
 pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
     var table = top;
 
-    if (limine.paging_mode.response.mode == 1) // 5-level paging is enabled
+    if (cpuid.features.pml5) // 5-level paging is enabled
         table = limine.convertPointer(read(table, 5, addr) orelse return null);
     table = limine.convertPointer(read(table, 4, addr) orelse return null);
 
     // handle possible huge pages
     inline for (0..2) |i| {
         const entry = table[index(3 - i, addr)];
+        const bits = 12 + ((2 - i) * 9);
+        const mask = (@as(usize, 1) << bits) - 1;
         if (!entry.present) return null;
-        if (entry.level.directory.huge) return entry.addr();
-        table = limine.convertPointer(@ptrFromInt(entry.addr()));
+        if (entry.level.directory.huge) return entry.addr() + (addr & mask);
+        const phys_table: *const PageTable = @ptrFromInt(entry.addr());
+        table = limine.convertPointer(phys_table);
     }
 
-    return @intFromPtr(read(table, 1, addr) orelse return null);
+    return @intFromPtr(read(table, 1, addr) orelse return null) + (addr & 0xFFF);
 }

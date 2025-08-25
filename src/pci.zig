@@ -237,7 +237,7 @@ pub const Class = union(PrimaryClass) {
                 const tag_name = @tagName(t);
 
                 const FieldType = @FieldType(Self, tag_name);
-                if (FieldType == void) return writer.writeAll(tag.name());
+                if (FieldType == void) return writer.writeAll(comptime t.name());
 
                 const field_value = @field(self, tag_name);
                 return field_value.format(fmt, options, writer);

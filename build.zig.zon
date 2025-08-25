@@ -3,11 +3,6 @@
     .version = "0.0.0",
     .fingerprint = 0x2c288ec2669c1edf,
     .dependencies = .{
-        .cpuid = .{
-            .url = "git+https://codeberg.org/zig-multimedia/cpuid#cc78ddcf965f5da4c7e508cab8d6aba907b7d4ed",
-            .hash = "1220c1d6abc3d6df0f5810bf87e39c20d3772ba7d9c7bcfd04952b935c7b9712172c",
-            .lazy = true,
-        },
         .dtb = .{
             .url = "git+https://github.com/kivikakk/dtb.zig.git#15c01b868fd8d9acd6dbc484708e0459a4a96185",
             .hash = "dtb-0.0.0-gULdmfUFAgDNV56omvXDB7T9N95qwxpVpiqY248YvjJJ",

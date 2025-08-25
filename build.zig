@@ -68,11 +68,6 @@ pub fn build(b: *std.Build) void {
         .x86_64 => {
             kernel.setLinkerScript(b.path("src/arch/x86_64/linker.ld"));
             kernel.addAssemblyFile(b.path("src/arch/x86_64/int/isr_stubs.s"));
-
-            if (b.lazyDependency("cpuid", .{})) |cpuid| {
-                const module = cpuid.module("cpuid");
-                kernel.root_module.addImport("cpuid", module);
-            }
         },
         inline else => |a| {
             kernel.setLinkerScript(b.path("src/arch/" ++ @tagName(a) ++ "/linker.ld"));

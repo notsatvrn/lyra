@@ -5,16 +5,16 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
 ## Goals
 
 - Readable and easy to understand codebase
-- Multi-architecture support (x86, RISC-V, ARM)
 - Modern design with [Limine](https://github.com/limine-bootloader/limine) boot protocol
-- Best-effort support for all post-2008 CPUs
+- (in the future) Multi-architecture support
 
 ## Progress
 
 - generic
-  - [x] tty
-    - [x] text mode impl
-    - [x] framebuffer impl
+  - [ ] tty
+    - [x] text mode backend
+    - [x] framebuffer backend
+    - [ ] ansi escape codes
   - [ ] memory
     - [x] pmm
     - [ ] vmm
@@ -33,17 +33,13 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
   - [ ] interrupts
     - [x] basic handlers
     - [ ] lapic driver
-    - [ ] deferred work
   - [ ] smp
     - [x] core id storage
   - [x] pci device tree
 - aarch64
-  - [ ] paging
   - [ ] system clock
     - [x] counter
     - [ ] hw clock reading
-  - [ ] interrupts
-  - [ ] smp
 
 ## Credits
 
