@@ -1,5 +1,3 @@
-const std = @import("std");
-const log = @import("../../log.zig");
 const limine = @import("../../limine.zig");
 
 // VENDOR
@@ -60,17 +58,23 @@ inline fn parseVendor(int: u96) Vendor {
 
 pub const Features = struct {
     pml5: bool,
-    x2apic: bool,
     hypervisor: bool,
-
-    // SSE & FPU
-    xsave: bool,
-    osxsave: bool,
-    avx: bool,
 
     // timing
     invariant_tsc: bool,
-    apic_tsc_deadline: bool,
+    tsc_deadline: bool,
+    x2apic: bool,
+
+    // FPU / SSE / AVX
+    xsave: bool,
+    osxsave: bool,
+    sse3: bool,
+    ssse3: bool,
+    fma: bool,
+    sse41: bool,
+    sse42: bool,
+    avx: bool,
+    aes: bool,
 };
 
 pub var features: Features = undefined;
@@ -109,29 +113,20 @@ pub fn identify() void {
             : [_] "{eax}" (1),
             : "={eax}"
         );
-
-        features.xsave = (ecx >> 26) & 1 == 1;
-        features.osxsave = (ecx >> 27) & 1 == 1;
-        features.avx = (ecx >> 28) & 1 == 1;
-        features.hypervisor = (ecx >> 31) == 1;
-    }
-
-    {
-        const max_extended = blk: {
-            var eax: u32 = 0x80000000;
-            var ebx: u32 = 0;
-            var ecx: u32 = 0;
-            var edx: u32 = 0;
-            asm volatile ("cpuid"
-                : [_] "={edx}" (edx),
-                  [_] "={ecx}" (ecx),
-                  [_] "={ebx}" (ebx),
-                  [_] "={eax}" (eax),
-            );
-            break :blk eax;
-        };
-
-        _ = max_extended; // qemu cpuid implementation just doesnt work with this for whatever reason
+        // zig fmt: off
+        features.sse3 =         ecx & 1 == 1;
+        features.ssse3 =        (ecx >> 9) & 1 == 1;
+        features.fma =          (ecx >> 12) & 1 == 1;
+        features.sse41 =        (ecx >> 19) & 1 == 1;
+        features.sse42 =        (ecx >> 20) & 1 == 1;
+        // x2apic (bit 21) skipped, check with Limine
+        features.tsc_deadline = (ecx >> 24) & 1 == 1;
+        features.aes =          (ecx >> 25) & 1 == 1;
+        features.xsave =        (ecx >> 26) & 1 == 1;
+        features.osxsave =      (ecx >> 27) & 1 == 1;
+        features.avx =          (ecx >> 28) & 1 == 1;
+        features.hypervisor =   (ecx >> 31) == 1;
+        // zig fmt: on
     }
 
     // check for invariant TSC support

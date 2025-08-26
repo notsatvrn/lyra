@@ -79,5 +79,47 @@ pub fn build(b: *std.Build) void {
         },
     }
 
+    const utils = b.dependency("utils", .{ .use_spinlock = true });
+    const utils_module = utils.module("utils");
+    kernel.root_module.addImport("utils", utils_module);
+
+    {
+        kernel.addIncludePath(b.path("uACPI/include"));
+
+        const cflags = [_][]const u8{
+            "-DUACPI_BAREBONES_MODE", // missing some functions for full implementation
+            "-DUACPI_SIZED_FREES", // need size to know how much memory to actually free
+        };
+
+        const src_files = [_][]const u8{
+            "tables.c",
+            "types.c",
+            "uacpi.c",
+            "utilities.c",
+            "interpreter.c",
+            "opcodes.c",
+            "namespace.c",
+            "stdlib.c",
+            "shareable.c",
+            "opregion.c",
+            "default_handlers.c",
+            "io.c",
+            "notify.c",
+            "sleep.c",
+            "registers.c",
+            "resources.c",
+            "event.c",
+            "mutex.c",
+            "osi.c",
+        };
+
+        inline for (src_files) |src| {
+            kernel.addCSourceFile(.{
+                .file = b.path("uACPI/source/" ++ src),
+                .flags = &cflags,
+            });
+        }
+    }
+
     b.installArtifact(kernel);
 }

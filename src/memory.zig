@@ -25,17 +25,25 @@ pub const TB = GB * 1024;
 pub const PB = TB * 1024;
 
 pub const PageSize = enum(usize) {
-    small = (4 * KB),
-    medium = (2 * MB),
-    large = (1 * GB),
+    small = 1, // 4KB
+    medium = 2, // 2MB
+    large = 3, // 1GB
 
     pub inline fn multiplier(self: PageSize) usize {
         return @intFromEnum(self) / @intFromEnum(PageSize.small);
     }
+
+    pub inline fn shift(self: PageSize) usize {
+        return 3 + @intFromEnum(self) * 9;
+    }
+
+    pub inline fn bytes(self: PageSize) usize {
+        return 1 << self.shift();
+    }
 };
 
-pub const min_page_size = @intFromEnum(PageSize.small);
-pub const max_page_size = @intFromEnum(PageSize.large);
+pub const min_page_size = PageSize.small.bytes();
+pub const max_page_size = PageSize.large.bytes();
 
 pub inline fn pagesNeeded(bytes: usize, size: PageSize) usize {
     const size_bytes = @intFromEnum(size);
@@ -46,7 +54,7 @@ pub inline fn pagesNeeded(bytes: usize, size: PageSize) usize {
 
 pub const Region = struct {
     const UsedSet = @import("memory/UsedSet.zig");
-    const Lock = @import("util/lock.zig").SpinSharedLock;
+    const Lock = @import("utils").lock.SpinSharedLock;
 
     ptr: [*]u8,
     set: UsedSet,
@@ -91,7 +99,7 @@ pub const Region = struct {
         self.set.unclaimRange(start, len);
         const new_start = self.set.claimRange(new_len) orelse return null;
         const new_block = self.ptr + (new_start * min_page_size);
-        @memcpy(new_block[0 .. len * max_page_size], ptr); // TODO: hugepages
+        @memcpy(new_block[0 .. len * min_page_size], ptr); // TODO: hugepages
         return @ptrCast(new_block);
     }
 
@@ -311,3 +319,26 @@ pub const allocator = if (builtin.is_test)
     std.testing.allocator
 else
     global_allocator.allocator();
+
+// PAGING & MEMORY-MAPPED I/O HELPERS
+
+const paging = @import("arch.zig").paging;
+pub const ManagedPageTable = @import("memory/ManagedPageTable.zig");
+
+pub var page_table: ManagedPageTable = undefined;
+pub const addr_space_end = std.math.maxInt(usize);
+pub var mmio_start: usize = addr_space_end - TB;
+
+pub const io = struct {
+    pub inline fn in(comptime T: type, addr: usize) T {
+        return @as(*const T, @ptrFromInt(addr)).*;
+    }
+
+    pub inline fn ins(comptime T: type, addr: usize, len: usize) [len]T {
+        return @as([*]T, @ptrFromInt(addr))[0..len].*;
+    }
+
+    pub inline fn out(comptime T: type, addr: usize, value: T) void {
+        @as(*T, @ptrFromInt(addr)).* = value;
+    }
+};

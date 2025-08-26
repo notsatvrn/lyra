@@ -22,9 +22,9 @@ pub inline fn init() void {
 pub inline fn setup() void {
     logger.info("identify processor", .{});
     cpuid.identify();
-    logger.info("- vendor: {s}", .{@tagName(cpuid.vendor)});
+    logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
     if (!cpuid.features.invariant_tsc)
         log.panic(null, "Invariant TSC unavailable!", .{});
     if (cpuid.features.x2apic)
-        logger.info("- x2apic supported", .{});
+        logger.info("- x2apic is supported", .{});
 }

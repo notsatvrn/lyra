@@ -1,1 +1,1 @@
-pub const io = @import("../util/mmio.zig");
+pub const io = @import("../memory.zig").io;

@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const TreeMap = @import("collections.zig").TreeMap;
+const memory = @import("memory.zig");
+const TreeMap = @import("utils").trees.Map;
 
 const log = @import("log.zig");
 const logger = log.Logger{ .name = "pci" };
@@ -16,8 +17,8 @@ fn cmpLoc(a: DeviceLocation, b: DeviceLocation) std.math.Order {
 }
 
 // use an AVL tree map to store devices, benefits from fast search and small size
-pub const Devices = TreeMap(DeviceLocation, DeviceInfo, cmpLoc, .avl);
-pub var devices = Devices{};
+pub const Devices = TreeMap(DeviceLocation, DeviceInfo, cmpLoc, .avl, true);
+pub var devices = Devices.init(memory.allocator);
 
 pub inline fn detect() !void {
     logger.info("detecting devices", .{});
@@ -25,7 +26,7 @@ pub inline fn detect() !void {
 }
 
 pub inline fn print() !void {
-    var iterator = devices.iterator();
+    var iterator = devices.iterator(memory.allocator);
     logger.info("devices:", .{});
 
     while (try iterator.next()) |device| {

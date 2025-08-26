@@ -8,6 +8,10 @@
             .hash = "dtb-0.0.0-gULdmfUFAgDNV56omvXDB7T9N95qwxpVpiqY248YvjJJ",
             .lazy = true,
         },
+        .utils = .{
+            .url = "git+https://github.com/notsatvrn/zig-utils#9916cc4a2f2a8965b7c4161aa4f52f029b0de79b",
+            .hash = "utils-0.0.0-mXwaHhKeAADW-uILdCnbHCEqWexiXBXxbtUeSejaqN1N",
+        },
     },
     .paths = .{
         "build.zig",

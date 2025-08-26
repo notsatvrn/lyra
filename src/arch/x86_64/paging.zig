@@ -1,4 +1,4 @@
-//! A simple interface to read and manipulate page tables on x86-64.
+//! Paging helpers implementation for x86-64.
 
 const std = @import("std");
 
@@ -6,6 +6,7 @@ const util = @import("util.zig");
 const cpuid = @import("cpuid.zig");
 const limine = @import("../../limine.zig");
 const memory = @import("../../memory.zig");
+const Size = memory.PageSize;
 
 // STRUCTURES
 
@@ -47,10 +48,17 @@ pub const Entry = packed struct(u64) {
     };
     // zig fmt: on
 
-    pub inline fn addr(self: Entry) usize {
-        const mask = ((@as(u64, 1) << 40) - 1) << 12;
+    const mask = ((@as(u64, 1) << 40) - 1) << 12;
+
+    pub inline fn getAddr(self: Entry) usize {
         const int: u64 = @bitCast(self);
         return int & mask;
+    }
+
+    pub inline fn setAddr(self: *Entry, addr: usize) void {
+        self.entry.address = 0; // zero the address
+        const int: *u64 = @ptrCast(self);
+        int.* |= addr & mask; // write the address
     }
 };
 
@@ -70,15 +78,18 @@ pub inline fn store(table: *const PageTable) void {
 
 // READ PAGE TABLE
 
+inline fn shift(level: usize) usize {
+    return 3 + (level * 9);
+}
+
 inline fn index(level: usize, addr: usize) usize {
-    const shift = 12 + ((level - 1) * 9);
-    return (addr >> shift) & 0x1FF;
+    return (addr >> shift(level)) & 0x1FF;
 }
 
 inline fn read(table: *const PageTable, level: usize, addr: usize) ?*const PageTable {
     const entry = table[index(level, addr)];
     if (!entry.present) return null;
-    return @ptrFromInt(entry.addr());
+    return @ptrFromInt(entry.getAddr());
 }
 
 pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
@@ -94,10 +105,93 @@ pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
         const bits = 12 + ((2 - i) * 9);
         const mask = (@as(usize, 1) << bits) - 1;
         if (!entry.present) return null;
-        if (entry.level.directory.huge) return entry.addr() + (addr & mask);
-        const phys_table: *const PageTable = @ptrFromInt(entry.addr());
+        if (entry.level.directory.huge) return entry.getAddr() + (addr & mask);
+        const phys_table: *const PageTable = @ptrFromInt(entry.getAddr());
         table = limine.convertPointer(phys_table);
     }
 
-    return @intFromPtr(read(table, 1, addr) orelse return null) + (addr & 0xFFF);
+    const entry = table[index(1, addr)];
+    if (!entry.present) return null;
+    return entry.getAddr() + (addr & 0xFFF);
+}
+
+// WRITE PAGE TABLE
+
+pub const Pool = std.heap.MemoryPool(PageTable);
+
+pub inline fn map(top: *PageTable, virt: usize, phys: usize, pages: usize, size: Size, options: Entry) !void {
+    const page_bytes = size.bytes();
+
+    var clean_base = options;
+    clean_base.present = true;
+    clean_base.level = .{ .directory = .{} };
+    clean_base.accessed = false;
+
+    const level = if (cpuid.features.pml5) 5 else 4;
+    const end = virt + (pages * page_bytes) - 1;
+
+    try mapRecursive(top, level, phys, virt, end, size, clean_base);
+}
+
+fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, size: Size, base: Entry) !void {
+    const start_idx = index(level, s);
+    const end_idx = index(level, e);
+
+    const entry_bytes = 1 << shift(level);
+    var phys = p;
+    var start = s;
+    // round start up to nearest entry_bytes for end
+    var end = (s + entry_bytes) & ~(entry_bytes - 1);
+    // don't go past e
+    end = @min(e, end);
+
+    for (start_idx..end_idx) |i| {
+        const entry = &table[i];
+
+        if (entry.present) {
+            // write the entry attributes
+            entry.writable = base.writable;
+            entry.user = base.user;
+            entry.write_thru = base.write_thru;
+            entry.uncached = base.uncached;
+            entry.no_exec = base.no_exec;
+        }
+
+        if (level == @intFromEnum(size)) {
+            // we're changing this to a hugepage but it used to be a table
+            if (level > 1 and !entry.level.directory.huge) {
+                const table: *PageTable = @ptrFromInt(entry.getAddr());
+                defer memory.page_allocator.destroy(table);
+                // level 3 could have more tables below it
+                if (level == 3) {}
+            }
+
+            if (!entry.present) entry.* = base;
+            // level 2 is 2MB hugepage, level 3 is 1GB hugepage
+            if (level > 1) entry.level.directory.huge = true;
+            entry.setAddr(phys);
+        } else {
+            if (!entry.present) {
+                // new entry
+                entry.* = base;
+                const new_table = memory.page_allocator.create(PageTable);
+                entry.setAddr(@intFromPtr(new_table));
+            }
+            mapRecursive(@ptrFromInt(entry.getAddr()), level - 1, start, end, phys, size, base);
+            start += entry_bytes;
+            end = @min(e, end + entry_bytes);
+            phys += entry_bytes;
+        }
+    }
+}
+
+/// Reduces a hugepage mapping to a lower page size.
+fn lowerMappings(table: *PageTable) void {}
+
+pub inline fn unmap(top: *PageTable, virt: usize, pages: usize, size: Size) void {
+    const page_bytes = size.bytes();
+
+    _ = top;
+    _ = virt;
+    _ = pages;
 }

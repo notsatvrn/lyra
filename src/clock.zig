@@ -6,6 +6,7 @@ const logger = log.Logger{ .name = "clock" };
 
 // COUNTER-BASED CLOCK
 // https://wiki.osdev.org/TSC - x86-64
+// https://wiki.osdev.org/HPET - x86-64 (fallback)
 // https://wiki.osdev.org/ARMv7_Generic_Timers - aarch64
 
 pub var init: u64 = 0;
@@ -36,7 +37,7 @@ pub fn nanoSinceBoot() u64 {
 
 // SYSTEM CLOCK
 
-// initial Real Time Clock reading + TSC avoids slow/inaccurate RTC reads
+// initial system clock reading + counter avoids slow/inaccurate system clock reads
 // (count_init - current count) * 1000 / CPU speed + base_init = current time
 const ClockState = struct {
     base_init: u64,

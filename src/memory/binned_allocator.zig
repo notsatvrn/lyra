@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const lock = @import("../util/lock.zig");
+const lock = @import("utils").lock;
 
 pub const Config = struct {
     /// Whether to synchronize usage of this allocator.

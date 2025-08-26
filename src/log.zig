@@ -7,7 +7,7 @@ pub const Ansi = tty.effects.Ansi;
 
 const arch = @import("arch.zig");
 const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
-const Lock = @import("util/lock.zig").SpinLock;
+const Lock = @import("utils").lock.SpinLock;
 
 var lock = Lock{};
 

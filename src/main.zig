@@ -49,13 +49,12 @@ export fn _start() callconv(.c) noreturn {
 
     tty.clear();
     arch.boot.setup();
-    // sanity check, should always work
-    arch.paging.store(arch.paging.load());
+    memory.page_table = memory.ManagedPageTable.fromUnmanaged(arch.paging.load());
+    arch.paging.store(memory.page_table.top); // sanity check, should always work
     memory.init();
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
     arch.util.enableInterrupts();
     clock.setup();
-    @import("memory/bench.zig").run();
 
     if (framebuffers.count != 0) fbsetup: {
         // set current framebuffer to mirror a virtual framebuffer (double-buffering)
@@ -87,7 +86,7 @@ export fn _start() callconv(.c) noreturn {
 
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
-    acpi.sdt_start = limine.rsdp.response.ptr.sdt();
+    acpi.init();
 
     while (true) arch.util.wfi();
 }
