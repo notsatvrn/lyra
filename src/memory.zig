@@ -11,8 +11,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
 
+const Lock = @import("utils").lock.SpinSharedLock;
 const limine = @import("limine.zig");
-
 const log = @import("log.zig");
 const logger = log.Logger{ .name = "memory" };
 
@@ -24,7 +24,7 @@ pub const GB = MB * 1024;
 pub const TB = GB * 1024;
 pub const PB = TB * 1024;
 
-pub const PageSize = enum(usize) {
+pub const PageSize = enum(u2) {
     small = 1, // 4KB
     medium = 2, // 2MB
     large = 3, // 1GB
@@ -33,12 +33,12 @@ pub const PageSize = enum(usize) {
         return @intFromEnum(self) / @intFromEnum(PageSize.small);
     }
 
-    pub inline fn shift(self: PageSize) usize {
-        return 3 + @intFromEnum(self) * 9;
+    pub inline fn shift(self: PageSize) u5 {
+        return 3 + @as(u5, @intFromEnum(self)) * 9;
     }
 
     pub inline fn bytes(self: PageSize) usize {
-        return 1 << self.shift();
+        return @as(usize, 1) << self.shift();
     }
 };
 
@@ -54,7 +54,6 @@ pub inline fn pagesNeeded(bytes: usize, size: PageSize) usize {
 
 pub const Region = struct {
     const UsedSet = @import("memory/UsedSet.zig");
-    const Lock = @import("utils").lock.SpinSharedLock;
 
     ptr: [*]u8,
     set: UsedSet,
@@ -328,6 +327,7 @@ pub const ManagedPageTable = @import("memory/ManagedPageTable.zig");
 pub var page_table: ManagedPageTable = undefined;
 pub const addr_space_end = std.math.maxInt(usize);
 pub var mmio_start: usize = addr_space_end - TB;
+pub var page_table_lock: Lock = .{};
 
 pub const io = struct {
     pub inline fn in(comptime T: type, addr: usize) T {

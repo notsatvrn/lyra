@@ -124,7 +124,7 @@ fn unhandled(stack: *InterruptStack) callconv(.c) noreturn {
     switch (n) {
         EXCEPTION_0...EXCEPTION_31 => {
             n -= EXCEPTION_0;
-            log.panic(null, "Unhandled exception: {s} ({} | {})", .{ EXCEPTION_NAMES[n], n, stack.error_code });
+            log.panic(null, "Unhandled exception: {s} ({} | {b})", .{ EXCEPTION_NAMES[n], n, stack.error_code });
         },
 
         IRQ_0...IRQ_15 => {

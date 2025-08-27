@@ -13,13 +13,11 @@ pub var init: u64 = 0;
 pub var speed: u64 = 0; // in hertz
 
 pub inline fn setup() void {
-    logger.info("calibrate counters", .{});
     speed = arch.counterSpeed();
     logger.info("counter speed: {}MHz", .{speed / std.time.ns_per_ms});
     init = arch.counter();
     // counts per microsecond for stall power consumption hack
     us_counts = countsPerNanos(std.time.ns_per_us);
-    logger.info("read system clock", .{});
     setupClock(arch.readSystemClock());
     logger.info("timestamp: {}", .{timestamp()});
 }

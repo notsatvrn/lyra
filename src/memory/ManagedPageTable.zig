@@ -6,6 +6,7 @@ const memory = @import("../memory.zig");
 const Size = memory.PageSize;
 const paging = @import("../arch.zig").paging;
 const PageTable = paging.PageTable;
+pub const Entry = paging.Entry;
 
 top: *PageTable,
 
@@ -38,7 +39,9 @@ pub inline fn physFromVirt(self: Self, addr: usize) ?usize {
 
 // WRITE OPERATIONS
 
-pub fn map(self: *Self, phys: usize, virt: usize, len: usize, size: Size) void {
+const limine = @import("../limine.zig");
+
+pub fn map(self: *Self, phys: usize, virt: usize, len: usize, size: Size, options: Entry) !void {
     const size_bytes = size.bytes();
     const page_mask = size_bytes - 1;
 
@@ -47,12 +50,12 @@ pub fn map(self: *Self, phys: usize, virt: usize, len: usize, size: Size) void {
     const virt_page = virt & ~page_mask;
     // offset + len, rounded up to a full page
     const len_real = (offset + len + size_bytes) & ~page_mask;
-    const pages = len_real >> size.shift();
+    const end = virt_page + len_real - 1;
 
-    paging.map(self.top, phys_page, virt_page, pages, size);
+    try paging.mapRecursive(self.top, limine.pagingLevels(), virt_page, end, phys_page, size, options.makeBase());
 }
 
-pub fn unmap(self: *Self, virt: usize, len: usize, size: Size) void {
+pub fn unmap(self: *Self, virt: usize, len: usize, size: Size, options: Entry) void {
     const size_bytes = size.bytes();
     const page_mask = size_bytes - 1;
 
@@ -62,5 +65,5 @@ pub fn unmap(self: *Self, virt: usize, len: usize, size: Size) void {
     const len_real = (offset + len + size_bytes) & ~page_mask;
     const pages = len_real >> size.shift();
 
-    paging.unmap(self.top, virt_page, pages, size);
+    paging.unmap(self.top, virt_page, pages, size, options.makeBase());
 }

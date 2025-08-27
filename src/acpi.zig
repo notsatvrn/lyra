@@ -12,16 +12,34 @@ export fn uacpi_kernel_get_rsdp(rsdp: *c.uacpi_phys_addr) callconv(.C) c.uacpi_s
 }
 
 const memory = @import("memory.zig");
+const PageSize = memory.PageSize;
+const Entry = memory.ManagedPageTable.Entry;
+
+const map_options = Entry{
+    .writable = true,
+    .write_thru = true,
+    .uncached = true,
+};
 
 export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.C) ?*anyopaque {
-    _ = phys;
-    _ = len;
-    log.panic(null, "uacpi_kernel_map not implemented", .{});
+    // pretty sure we can just use limine's map for this (on base revision 2)
+    if (true) return @ptrFromInt(phys | limine.hhdm.response.offset);
+
+    // impl where we actually map stuff (not needed i believe?)
+    log.printf("uacpi_kernel_map | addr: {x}, len: {}\n", .{ phys, len });
+    memory.page_table_lock.lock();
+    defer memory.page_table_lock.unlock();
+    const virt = memory.mmio_start;
+    memory.mmio_start += (@as(usize, len) + PageSize.small.bytes()) & ~@as(usize, 0xFFF);
+    memory.page_table.map(phys, virt, len, .small, map_options) catch
+        log.panic(null, "uacpi_kernel_map failed", .{});
+    memory.page_table.store();
+    return @ptrFromInt(virt);
 }
 export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) void {
     _ = virt;
     _ = len;
-    log.panic(null, "uacpi_kernel_unmap not implemented", .{});
+    // pretty sure we can just use limine's map for this (on base revision 2)
 }
 
 const log = @import("log.zig");

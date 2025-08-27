@@ -161,18 +161,24 @@ pub inline fn convertPointer(ptr: anytype) @TypeOf(ptr) {
 
 pub export var paging_mode linksection(".requests") = PagingModeRequest{};
 
+// requesting 57-bit mode; 1 on x86-64 and aarch64, 2 on riscv64
+const highest_paging_mode = if (builtin.cpu.arch == .riscv64) 2 else 1;
+
 pub const PagingModeRequest = extern struct {
     id: [4]u64 = common_magic ++ .{ 0x95c1a0edab0944cb, 0xa4e5cb3842f7488a },
     revision: u64 = 0,
     response: *const PagingModeResponse = undefined,
-    // 57-bit mode is 1 on x86-64 and aarch64, 2 on riscv64
-    mode: u64 = if (builtin.cpu.arch == .riscv64) 2 else 1,
+    mode: u64 = highest_paging_mode,
 };
 
 pub const PagingModeResponse = extern struct {
     revision: u64,
     mode: u64,
 };
+
+pub inline fn pagingLevels() u3 {
+    return @truncate(paging_mode.response.mode + (5 - highest_paging_mode));
+}
 
 // SMBIOS
 

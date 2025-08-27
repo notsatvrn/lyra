@@ -50,11 +50,13 @@ export fn _start() callconv(.c) noreturn {
     tty.clear();
     arch.boot.setup();
     memory.page_table = memory.ManagedPageTable.fromUnmanaged(arch.paging.load());
-    arch.paging.store(memory.page_table.top); // sanity check, should always work
+    memory.page_table.store(); // sanity check, should always work
     memory.init();
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
     arch.util.enableInterrupts();
     clock.setup();
+
+    logger.info("{x}", .{arch.paging.load()[0].getAddr()});
 
     if (framebuffers.count != 0) fbsetup: {
         // set current framebuffer to mirror a virtual framebuffer (double-buffering)

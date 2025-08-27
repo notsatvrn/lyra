@@ -49,17 +49,25 @@ pub const Entry = packed struct(u64) {
     };
     // zig fmt: on
 
-    const mask = ((@as(u64, 1) << 40) - 1) << 12;
-
     pub inline fn getAddr(self: Entry) usize {
-        const int: u64 = @bitCast(self);
-        return int & mask;
+        const mask = ((@as(u64, 1) << 40) - 1) << 12;
+        return @as(u64, @bitCast(self)) & mask;
     }
 
     pub inline fn setAddr(self: *Entry, addr: usize) void {
-        self.entry.address = 0; // zero the address
-        const int: *u64 = @ptrCast(self);
-        int.* |= addr & mask; // write the address
+        self.level.entry.address = @truncate(addr >> 12);
+    }
+
+    /// Wipes an entry to keep just the basic flags for writing new entries.
+    pub inline fn makeBase(self: Entry) Entry {
+        var base = self;
+        base.present = true;
+        base.level = .{
+            // wipe everything but the protection key
+            .entry = .{ .protection_key = base.level.entry.protection_key },
+        };
+        base.accessed = false;
+        return base;
     }
 };
 
@@ -72,33 +80,33 @@ pub inline fn load() *PageTable {
 }
 
 pub inline fn store(table: *const PageTable) void {
-    var addr = @as(u64, @intFromPtr(table));
+    var addr: u64 = @intFromPtr(table);
     addr -= limine.hhdm.response.offset;
     util.setRegister(u64, "cr3", addr);
 }
 
 // READ PAGE TABLE
 
-inline fn shift(level: usize) usize {
-    return 3 + (level * 9);
+inline fn shift(level: u3) u6 {
+    return 3 + (@as(u6, level) * 9);
 }
 
-inline fn index(level: usize, addr: usize) usize {
+inline fn index(level: u3, addr: usize) usize {
     return (addr >> shift(level)) & 0x1FF;
 }
 
-inline fn read(table: *const PageTable, level: usize, addr: usize) ?*const PageTable {
+inline fn read(table: *const PageTable, level: u3, addr: usize) ?*const PageTable {
     const entry = table[index(level, addr)];
     if (!entry.present) return null;
-    return @ptrFromInt(entry.getAddr());
+    return @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
 }
 
 pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
     var table = top;
 
     if (cpuid.features.pml5) // 5-level paging is enabled
-        table = limine.convertPointer(read(table, 5, addr) orelse return null);
-    table = limine.convertPointer(read(table, 4, addr) orelse return null);
+        table = read(table, 5, addr) orelse return null;
+    table = read(table, 4, addr) orelse return null;
 
     // handle possible huge pages
     inline for (0..2) |i| {
@@ -107,8 +115,7 @@ pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
         const mask = (@as(usize, 1) << bits) - 1;
         if (!entry.present) return null;
         if (entry.level.directory.huge) return entry.getAddr() + (addr & mask);
-        const phys_table: *const PageTable = @ptrFromInt(entry.getAddr());
-        table = limine.convertPointer(phys_table);
+        table = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
     }
 
     const entry = table[index(1, addr)];
@@ -118,29 +125,11 @@ pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
 
 // WRITE PAGE TABLE
 
-pub const Pool = std.heap.MemoryPool(PageTable);
-
-pub inline fn map(top: *PageTable, virt: usize, phys: usize, pages: usize, size: Size, options: Entry) !void {
-    const page_bytes = size.bytes();
-
-    var clean_base = options;
-    clean_base.present = true;
-    clean_base.level = .{ .entry = .{
-        .protection_key = clean_base.level.entry.protection_key,
-    } };
-    clean_base.accessed = false;
-
-    const level = if (cpuid.features.pml5) 5 else 4;
-    const end = virt + (pages * page_bytes) - 1;
-
-    try mapRecursive(top, level, phys, virt, end, size, clean_base);
-}
-
-fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, size: Size, base: Entry) !void {
+pub fn mapRecursive(table: *PageTable, level: u3, s: usize, e: usize, p: usize, size: Size, base: Entry) !void {
     const start_idx = index(level, s);
     const end_idx = index(level, e);
 
-    const entry_bytes = 1 << shift(level);
+    const entry_bytes = @as(usize, 1) << shift(level);
     var phys = p;
     var start = s;
     // round start up to nearest entry_bytes for end
@@ -148,7 +137,7 @@ fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, s
     // don't go past e
     end = @min(e, end);
 
-    for (start_idx..end_idx) |i| {
+    for (start_idx..end_idx + 1) |i| {
         const entry = &table[i];
 
         if (entry.present) {
@@ -168,15 +157,15 @@ fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, s
                 // entry not present, make a new one
                 entry.* = base; // start with the base
                 const new_table = try allocator.create(PageTable);
-                entry.setAddr(@intFromPtr(new_table));
+                entry.setAddr(@intFromPtr(new_table) - limine.hhdm.response.offset);
             } else if (entry.level.directory.huge) {
-                // we have a hugepage! we need to reduce it
-                entry.level.directory.huge = false;
-                const old_size: Size = @enumFromInt(level);
+                // convert hugepage to smaller pages we can map in
+                const old_size: Size = @enumFromInt(@as(u2, @truncate(level)));
                 try downmapEntry(entry, base, old_size, size);
             }
             // now we have a directory, and we can start mapping in it
-            mapRecursive(@ptrFromInt(entry.getAddr()), level - 1, start, end, phys, size, base);
+            const next_table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
+            try mapRecursive(next_table, level - 1, start, end, phys, size, base);
             start += entry_bytes;
             end = @min(e, end + entry_bytes);
             phys += entry_bytes;
@@ -188,9 +177,9 @@ fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, s
 fn mapEnd(entry: *Entry, size: Size, base: Entry, addr: usize) void {
     const level = @intFromEnum(size);
 
-    // we're changing this to a hugepage but it used to be a table
     if (level > 1 and !entry.level.directory.huge) {
-        const table: *PageTable = @ptrFromInt(entry.getAddr());
+        // we're changing this to a hugepage but it used to be a table
+        const table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
         defer allocator.destroy(table);
         // level 3 has tables below it (4KiB -> 1GiB)
         if (level == 3) {}
@@ -207,18 +196,17 @@ fn mapEnd(entry: *Entry, size: Size, base: Entry, addr: usize) void {
 fn downmapEntry(entry: *Entry, base: Entry, from: Size, to: Size) !void {
     // if the original size is smaller or equal, we can't downmap
     std.debug.assert(@intFromEnum(from) > @intFromEnum(to));
+    // copy the page entry (with address) for lower entries
+    var bottom = entry.*;
     // make the new page table
+    entry.* = base; // reset entry to directory
     const table = try allocator.create(PageTable);
     entry.setAddr(@intFromPtr(table) - limine.hhdm.response.offset);
     // fill the new page table
-    const dist = @intFromEnum(from) - @intFromEnum(to);
-    var bottom = entry.*; // copy the page entry for bottom
-    entry.* = base; // reset page entry
-
-    switch (dist) {
+    switch (@intFromEnum(from) - @intFromEnum(to)) {
         // 1GiB -> 2MiB or 2MiB -> 4KiB
         1 => {
-            const offset = 1 << (to.shift() - 12);
+            const offset = @as(u40, 1) << (to.shift() - 12);
             // still a hugepage if we're doing 1GiB -> 2MiB
             bottom.level.directory.huge = to == .medium;
             for (0..512) |i| {
@@ -229,11 +217,13 @@ fn downmapEntry(entry: *Entry, base: Entry, from: Size, to: Size) !void {
         // 1GiB -> 4KiB
         2 => {
             const tables = try allocator.alloc(PageTable, 512);
+            // 4KiB is the only possible page size here
+            bottom.level.directory.huge = false;
             for (0..512) |i| {
                 table[i] = base;
-                table[i].setAddr(@intFromPtr(tables[i]));
+                table[i].setAddr(@intFromPtr(&tables[i]));
                 for (0..512) |j| {
-                    table[i][j] = bottom;
+                    tables[i][j] = bottom;
                     bottom.level.entry.address += 1;
                 }
             }
