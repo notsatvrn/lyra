@@ -65,9 +65,8 @@ pub const Entry = packed struct(u64) {
 
     /// Returns a blank entry with the original entry's flags.
     pub inline fn getFlags(self: Entry, present: bool) Entry {
-        var flags = Entry{};
+        var flags = Entry{ .present = present };
         flags.setFlags(self);
-        flags.present = present;
         return flags;
     }
 };
@@ -128,6 +127,75 @@ pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
 
 // WRITE PAGE TABLE
 
+pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usize, p: ?usize, size: Size, flags: Entry) !void {
+    const start_idx = index(level, s);
+    const end_idx = index(level, e);
+
+    const entry_bytes = @as(usize, 1) << shift(level);
+    var phys = p;
+    var start = s;
+    // round start up to nearest entry_bytes for end
+    var end = (s + entry_bytes) & ~(entry_bytes - 1);
+    // don't go past e
+    end = @min(e, end);
+
+    for (start_idx..end_idx + 1) |i| {
+        const entry = &table[i];
+        if (p != null and entry.present)
+            entry.setFlags(flags);
+
+        if (level == @intFromEnum(size)) {
+            // prepare entry
+            if (entry.present) {
+                cleanEntry(entry, pool, size);
+            } else if (p != null) entry.* = flags;
+            // write entry
+            if (phys) |addr| {
+                if (size != .small) entry.level.directory.huge = true;
+                entry.setAddr(addr);
+            } else {
+                entry.* = .{};
+                continue;
+            }
+        } else {
+            if (!entry.present) {
+                // entry not present, make a new one
+                entry.* = flags; // start with the flags
+                const new_table = try pool.create();
+                entry.setAddr(@intFromPtr(new_table) - limine.hhdm.response.offset);
+            } else if (entry.level.directory.huge) {
+                // convert hugepage to smaller pages we can map in
+                const old_size: Size = @enumFromInt(@as(u2, @truncate(level)));
+                try downmapEntry(entry, pool, flags, old_size, size);
+            }
+            // now we have a directory, and we can start mapping in it
+            const next_table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
+            try mapRecursive(next_table, pool, level - 1, start, end, phys, size, flags);
+            start += entry_bytes;
+            end = @min(e, end + entry_bytes);
+            if (p == null) continue;
+        }
+        // phys can't be null
+        phys.? += entry_bytes;
+    }
+}
+
+/// Deallocate a present entry's child tables.
+fn cleanEntry(entry: *Entry, pool: *Pool, size: Size) void {
+    if (size == .small or entry.level.directory.huge) return;
+    // we're changing this to a hugepage but it used to be a table
+    const table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
+    defer pool.destroy(table);
+    // large page level may have tables below it (4KiB -> 1GiB)
+    if (size != .large) return;
+    for (0..512) |i| {
+        const e = &table[i];
+        if (!e.present or e.level.directory.huge) continue;
+        const t: *PageTable = @ptrFromInt(e.getAddr() + limine.hhdm.response.offset);
+        pool.destroy(t);
+    }
+}
+
 /// Convert a hugepage entry to a smaller page size.
 /// Useful when trying to map or unmap inside a hugepage.
 fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) !void {
@@ -167,82 +235,4 @@ fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) 
         },
         else => unreachable,
     }
-}
-
-// MAPPING PAGES
-
-pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usize, p: usize, size: Size, flags: Entry) !void {
-    const start_idx = index(level, s);
-    const end_idx = index(level, e);
-
-    const entry_bytes = @as(usize, 1) << shift(level);
-    var phys = p;
-    var start = s;
-    // round start up to nearest entry_bytes for end
-    var end = (s + entry_bytes) & ~(entry_bytes - 1);
-    // don't go past e
-    end = @min(e, end);
-
-    for (start_idx..end_idx + 1) |i| {
-        const entry = &table[i];
-        if (entry.present) entry.setFlags(flags);
-        if (level == @intFromEnum(size)) {
-            // we've reached the page level
-            mapEnd(entry, pool, size, flags, phys);
-        } else {
-            if (!entry.present) {
-                // entry not present, make a new one
-                entry.* = flags; // start with the flags
-                const new_table = try pool.create();
-                entry.setAddr(@intFromPtr(new_table) - limine.hhdm.response.offset);
-            } else if (entry.level.directory.huge) {
-                // convert hugepage to smaller pages we can map in
-                const old_size: Size = @enumFromInt(@as(u2, @truncate(level)));
-                try downmapEntry(entry, pool, flags, old_size, size);
-            }
-            // now we have a directory, and we can start mapping in it
-            const next_table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
-            try mapRecursive(next_table, pool, level - 1, start, end, phys, size, flags);
-            start += entry_bytes;
-            end = @min(e, end + entry_bytes);
-        }
-        phys += entry_bytes;
-    }
-}
-
-/// Handle mapping at the page level, where we set the physical address.
-fn mapEnd(entry: *Entry, pool: *Pool, size: Size, flags: Entry, addr: usize) void {
-    const level = @intFromEnum(size);
-
-    if (!entry.present) {
-        entry.* = flags;
-    } else if (level > 1 and !entry.level.directory.huge) huge: {
-        // we're changing this to a hugepage but it used to be a table
-        const table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
-        defer pool.destroy(table);
-        // level 3 has tables below it (4KiB -> 1GiB)
-        if (level != 3) break :huge;
-        for (0..512) |i| {
-            const e = &table[i];
-            if (!e.present) continue;
-            const t: *PageTable = @ptrFromInt(e.getAddr() + limine.hhdm.response.offset);
-            pool.destroy(t);
-        }
-    }
-
-    // level 2 is 2MB hugepage, level 3 is 1GB hugepage
-    if (level > 1) entry.level.directory.huge = true;
-    entry.setAddr(addr);
-}
-
-// UNMAPPING PAGES
-
-pub inline fn unmap(top: *PageTable, pool: *Pool, virt: usize, pages: usize, size: Size) void {
-    const page_bytes = size.bytes();
-
-    _ = top;
-    _ = virt;
-    _ = pages;
-    _ = page_bytes;
-    _ = pool;
 }
