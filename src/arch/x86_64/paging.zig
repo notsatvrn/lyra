@@ -6,6 +6,7 @@ const util = @import("util.zig");
 const cpuid = @import("cpuid.zig");
 const limine = @import("../../limine.zig");
 const memory = @import("../../memory.zig");
+const allocator = memory.page_allocator;
 const Size = memory.PageSize;
 
 // STRUCTURES
@@ -66,13 +67,13 @@ pub const Entry = packed struct(u64) {
 
 pub inline fn load() *PageTable {
     var addr = util.getRegister(u64, "cr3");
-    addr |= limine.hhdm.response.offset;
+    addr += limine.hhdm.response.offset;
     return @ptrFromInt(addr);
 }
 
 pub inline fn store(table: *const PageTable) void {
     var addr = @as(u64, @intFromPtr(table));
-    addr &= ~limine.hhdm.response.offset;
+    addr -= limine.hhdm.response.offset;
     util.setRegister(u64, "cr3", addr);
 }
 
@@ -124,7 +125,9 @@ pub inline fn map(top: *PageTable, virt: usize, phys: usize, pages: usize, size:
 
     var clean_base = options;
     clean_base.present = true;
-    clean_base.level = .{ .directory = .{} };
+    clean_base.level = .{ .entry = .{
+        .protection_key = clean_base.level.entry.protection_key,
+    } };
     clean_base.accessed = false;
 
     const level = if (cpuid.features.pml5) 5 else 4;
@@ -158,25 +161,21 @@ fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, s
         }
 
         if (level == @intFromEnum(size)) {
-            // we're changing this to a hugepage but it used to be a table
-            if (level > 1 and !entry.level.directory.huge) {
-                const table: *PageTable = @ptrFromInt(entry.getAddr());
-                defer memory.page_allocator.destroy(table);
-                // level 3 could have more tables below it
-                if (level == 3) {}
-            }
-
-            if (!entry.present) entry.* = base;
-            // level 2 is 2MB hugepage, level 3 is 1GB hugepage
-            if (level > 1) entry.level.directory.huge = true;
-            entry.setAddr(phys);
+            // we've reached the page level
+            mapEnd(entry, size, base, phys);
         } else {
             if (!entry.present) {
-                // new entry
-                entry.* = base;
-                const new_table = memory.page_allocator.create(PageTable);
+                // entry not present, make a new one
+                entry.* = base; // start with the base
+                const new_table = try allocator.create(PageTable);
                 entry.setAddr(@intFromPtr(new_table));
+            } else if (entry.level.directory.huge) {
+                // we have a hugepage! we need to reduce it
+                entry.level.directory.huge = false;
+                const old_size: Size = @enumFromInt(level);
+                try downmapEntry(entry, base, old_size, size);
             }
+            // now we have a directory, and we can start mapping in it
             mapRecursive(@ptrFromInt(entry.getAddr()), level - 1, start, end, phys, size, base);
             start += entry_bytes;
             end = @min(e, end + entry_bytes);
@@ -185,8 +184,63 @@ fn mapRecursive(table: *PageTable, level: usize, s: usize, e: usize, p: usize, s
     }
 }
 
-/// Reduces a hugepage mapping to a lower page size.
-fn lowerMappings(table: *PageTable) void {}
+/// Handle mapping at the page level, where we set the physical address.
+fn mapEnd(entry: *Entry, size: Size, base: Entry, addr: usize) void {
+    const level = @intFromEnum(size);
+
+    // we're changing this to a hugepage but it used to be a table
+    if (level > 1 and !entry.level.directory.huge) {
+        const table: *PageTable = @ptrFromInt(entry.getAddr());
+        defer allocator.destroy(table);
+        // level 3 has tables below it (4KiB -> 1GiB)
+        if (level == 3) {}
+    }
+
+    if (!entry.present) entry.* = base;
+    // level 2 is 2MB hugepage, level 3 is 1GB hugepage
+    if (level > 1) entry.level.directory.huge = true;
+    entry.setAddr(addr);
+}
+
+/// Convert a hugepage entry to a smaller page size.
+/// Useful when trying to map or unmap inside a hugepage.
+fn downmapEntry(entry: *Entry, base: Entry, from: Size, to: Size) !void {
+    // if the original size is smaller or equal, we can't downmap
+    std.debug.assert(@intFromEnum(from) > @intFromEnum(to));
+    // make the new page table
+    const table = try allocator.create(PageTable);
+    entry.setAddr(@intFromPtr(table) - limine.hhdm.response.offset);
+    // fill the new page table
+    const dist = @intFromEnum(from) - @intFromEnum(to);
+    var bottom = entry.*; // copy the page entry for bottom
+    entry.* = base; // reset page entry
+
+    switch (dist) {
+        // 1GiB -> 2MiB or 2MiB -> 4KiB
+        1 => {
+            const offset = 1 << (to.shift() - 12);
+            // still a hugepage if we're doing 1GiB -> 2MiB
+            bottom.level.directory.huge = to == .medium;
+            for (0..512) |i| {
+                table[i] = bottom;
+                bottom.level.entry.address += offset;
+            }
+        },
+        // 1GiB -> 4KiB
+        2 => {
+            const tables = try allocator.alloc(PageTable, 512);
+            for (0..512) |i| {
+                table[i] = base;
+                table[i].setAddr(@intFromPtr(tables[i]));
+                for (0..512) |j| {
+                    table[i][j] = bottom;
+                    bottom.level.entry.address += 1;
+                }
+            }
+        },
+        else => unreachable,
+    }
+}
 
 pub inline fn unmap(top: *PageTable, virt: usize, pages: usize, size: Size) void {
     const page_bytes = size.bytes();
@@ -194,4 +248,5 @@ pub inline fn unmap(top: *PageTable, virt: usize, pages: usize, size: Size) void
     _ = top;
     _ = virt;
     _ = pages;
+    _ = page_bytes;
 }
