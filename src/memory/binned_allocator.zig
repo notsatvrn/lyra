@@ -1,7 +1,6 @@
-// based on ZLS' binned allocator from before smp allocator was added
+//! Based on ZLS' binned allocator from before smp allocator was added.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const lock = @import("utils").lock;
 
 pub const Config = struct {
@@ -462,10 +461,7 @@ test "shrink large object to large object with larger alignment" {
     var slice = try allocator.alignedAlloc(u8, 16, alloc_size);
     defer allocator.free(slice);
 
-    const big_alignment: usize = switch (builtin.os.tag) {
-        .windows => 65536, // Windows aligns to 64K.
-        else => 8192,
-    };
+    const big_alignment: usize = 8192;
     // This loop allocates until we find a page that is not aligned to the big
     // alignment. Then we shrink the allocation after the loop, but increase the
     // alignment to the higher one, that we know will force it to realloc.
@@ -521,10 +517,7 @@ test "realloc large object to larger alignment" {
     var slice = try allocator.alignedAlloc(u8, 16, 8192 + 50);
     defer allocator.free(slice);
 
-    const big_alignment: usize = switch (builtin.os.tag) {
-        .windows => 65536, // Windows aligns to 64K.
-        else => 8192,
-    };
+    const big_alignment: usize = 8192;
     // This loop allocates until we find a page that is not aligned to the big alignment.
     var stuff_to_free: std.ArrayListUnmanaged([]align(16) u8) = .{};
     while (std.mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {

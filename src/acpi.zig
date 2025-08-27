@@ -15,14 +15,14 @@ const memory = @import("memory.zig");
 const PageSize = memory.PageSize;
 const Entry = memory.ManagedPageTable.Entry;
 
-const map_options = Entry{ .writable = true };
+const map_flags = Entry{ .writable = true };
 
 export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.C) ?*anyopaque {
     memory.page_table_lock.lock();
     defer memory.page_table_lock.unlock();
     const virt = memory.mmio_start;
     memory.mmio_start += (@as(usize, len) + PageSize.small.bytes()) & ~@as(usize, 0xFFF);
-    memory.page_table.map(phys, virt, len, .small, map_options) catch
+    memory.page_table.map(phys, virt, len, .small, map_flags) catch
         log.panic(null, "uacpi_kernel_map failed", .{});
     memory.page_table.store();
     return @ptrFromInt(virt);
