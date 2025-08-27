@@ -22,50 +22,40 @@ pub const Entry = packed struct(u64) {
     uncached:   bool = false,
     accessed:   bool = false,
     level:      Level = .{ .directory = .{} },
+    _reserved0: u3  = 0,
+    address:    u35 = 0,
+    _reserved1: u12 = 0,
+    prot_key:   u4  = 0,
     no_exec:    bool = false,
 
     pub const Level = packed union {
-        directory: packed struct(u57) {
+        directory: packed struct(u3) {
             _reserved0: u1 = 0,
             huge: bool = false,
-            _reserved1: u4 = 0,
-
-            address: u40 = 0,
-            
-            _reserved2: u7 = 0,
-            _reserved3: u4 = 0, // PK in entry
+            _reserved1: u1 = 0,
         },
-        entry: packed struct(u57) {
+        entry: packed struct(u3) {
             dirty:  bool = false,
             pat:    bool = false,
             global: bool = false,
-            _reserved0: u3 = 0,
-
-            address: u40 = 0,
-            
-            _reserved1: u7 = 0,
-            protection_key: u4 = 0,
         },
     };
     // zig fmt: on
 
     pub inline fn getAddr(self: Entry) usize {
-        const mask = ((@as(u64, 1) << 40) - 1) << 12;
+        const mask = ((@as(u64, 1) << 35) - 1) << 12;
         return @as(u64, @bitCast(self)) & mask;
     }
 
     pub inline fn setAddr(self: *Entry, addr: usize) void {
-        self.level.entry.address = @truncate(addr >> 12);
+        self.address = @truncate(addr >> 12);
     }
 
     /// Wipes an entry to keep just the basic flags for writing new entries.
     pub inline fn makeBase(self: Entry) Entry {
         var base = self;
         base.present = true;
-        base.level = .{
-            // wipe everything but the protection key
-            .entry = .{ .protection_key = base.level.entry.protection_key },
-        };
+        base.level = .{ .entry = .{} };
         base.accessed = false;
         return base;
     }
@@ -168,8 +158,8 @@ pub fn mapRecursive(table: *PageTable, level: u3, s: usize, e: usize, p: usize, 
             try mapRecursive(next_table, level - 1, start, end, phys, size, base);
             start += entry_bytes;
             end = @min(e, end + entry_bytes);
-            phys += entry_bytes;
         }
+        phys += entry_bytes;
     }
 }
 
@@ -177,15 +167,22 @@ pub fn mapRecursive(table: *PageTable, level: u3, s: usize, e: usize, p: usize, 
 fn mapEnd(entry: *Entry, size: Size, base: Entry, addr: usize) void {
     const level = @intFromEnum(size);
 
-    if (level > 1 and !entry.level.directory.huge) {
+    if (!entry.present) {
+        entry.* = base;
+    } else if (level > 1 and !entry.level.directory.huge) huge: {
         // we're changing this to a hugepage but it used to be a table
         const table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
         defer allocator.destroy(table);
         // level 3 has tables below it (4KiB -> 1GiB)
-        if (level == 3) {}
+        if (level != 3) break :huge;
+        for (0..512) |i| {
+            const e = &table[i];
+            if (!e.present) continue;
+            const t: *PageTable = @ptrFromInt(e.getAddr() + limine.hhdm.response.offset);
+            allocator.destroy(t);
+        }
     }
 
-    if (!entry.present) entry.* = base;
     // level 2 is 2MB hugepage, level 3 is 1GB hugepage
     if (level > 1) entry.level.directory.huge = true;
     entry.setAddr(addr);
@@ -206,12 +203,12 @@ fn downmapEntry(entry: *Entry, base: Entry, from: Size, to: Size) !void {
     switch (@intFromEnum(from) - @intFromEnum(to)) {
         // 1GiB -> 2MiB or 2MiB -> 4KiB
         1 => {
-            const offset = @as(u40, 1) << (to.shift() - 12);
+            const offset = @as(u35, 1) << (to.shift() - 12);
             // still a hugepage if we're doing 1GiB -> 2MiB
             bottom.level.directory.huge = to == .medium;
             for (0..512) |i| {
                 table[i] = bottom;
-                bottom.level.entry.address += offset;
+                bottom.address += offset;
             }
         },
         // 1GiB -> 4KiB
@@ -224,7 +221,7 @@ fn downmapEntry(entry: *Entry, base: Entry, from: Size, to: Size) !void {
                 table[i].setAddr(@intFromPtr(&tables[i]));
                 for (0..512) |j| {
                     tables[i][j] = bottom;
-                    bottom.level.entry.address += 1;
+                    bottom.address += 1;
                 }
             }
         },

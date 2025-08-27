@@ -91,7 +91,7 @@ pub fn identify() void {
               [_] "={ecx}" (ecx),
               [_] "={ebx}" (ebx),
             : [_] "{eax}" (0),
-            : "={eax}"
+            : "eax"
         );
         const value = @as(u96, ecx) << 64 |
             @as(u96, edx) << 32 |
@@ -111,7 +111,7 @@ pub fn identify() void {
             : [_] "={ecx}" (ecx),
               [_] "={edx}" (edx),
             : [_] "{eax}" (1),
-            : "={eax}"
+            : "eax", "ebx"
         );
         // zig fmt: off
         features.sse3 =         ecx & 1 == 1;

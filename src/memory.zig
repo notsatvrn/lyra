@@ -326,7 +326,7 @@ pub const ManagedPageTable = @import("memory/ManagedPageTable.zig");
 
 pub var page_table: ManagedPageTable = undefined;
 pub const addr_space_end = std.math.maxInt(usize);
-pub var mmio_start: usize = addr_space_end - TB;
+pub var mmio_start: usize = addr_space_end - (TB - 1);
 pub var page_table_lock: Lock = .{};
 
 pub const io = struct {

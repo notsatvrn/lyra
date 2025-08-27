@@ -15,18 +15,9 @@ const memory = @import("memory.zig");
 const PageSize = memory.PageSize;
 const Entry = memory.ManagedPageTable.Entry;
 
-const map_options = Entry{
-    .writable = true,
-    .write_thru = true,
-    .uncached = true,
-};
+const map_options = Entry{ .writable = true };
 
 export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.C) ?*anyopaque {
-    // pretty sure we can just use limine's map for this (on base revision 2)
-    if (true) return @ptrFromInt(phys | limine.hhdm.response.offset);
-
-    // impl where we actually map stuff (not needed i believe?)
-    log.printf("uacpi_kernel_map | addr: {x}, len: {}\n", .{ phys, len });
     memory.page_table_lock.lock();
     defer memory.page_table_lock.unlock();
     const virt = memory.mmio_start;

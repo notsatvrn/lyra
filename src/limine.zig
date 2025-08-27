@@ -6,7 +6,7 @@ const common_magic: [2]u64 = .{ 0xc7b1dd30df4c8b88, 0x0a82e883a194f07b };
 // REVISION
 
 export const revision: [3]u64 linksection(".requests") =
-    .{ 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 2 };
+    .{ 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 3 };
 
 // MARKERS
 
