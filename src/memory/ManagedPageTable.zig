@@ -42,8 +42,7 @@ pub inline fn physFromVirt(self: Self, addr: usize) ?usize {
 
 const limine = @import("../limine.zig");
 
-/// Map a section of virtual memory (optionally) to a physical address.
-/// If no physical address is provided, the section will be unmapped instead.
+/// Map a section of virtual memory to a physical address.
 pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
     const size_bytes = size.bytes();
     const page_mask = size_bytes - 1;
@@ -64,4 +63,9 @@ pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags
     const f = flags.getFlags(true);
 
     try paging.mapRecursive(self.top, &self.pool, level, virt_page, end, phys_page, size, f);
+}
+
+/// Unmap a section of virtual memory.
+pub inline fn unmap(self: *Self, virt: usize, len: usize, size: Size) !void {
+    try self.map(null, virt, len, size, undefined);
 }

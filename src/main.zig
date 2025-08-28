@@ -89,6 +89,10 @@ export fn _start() callconv(.c) noreturn {
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
     acpi.init();
+    // TEST: reinit ACPI
+    acpi.deinit();
+    memory.mmio_start = memory.addr_space_end - (memory.TB - 1);
+    acpi.init();
 
     while (true) arch.util.wfi();
 }

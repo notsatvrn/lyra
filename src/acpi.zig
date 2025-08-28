@@ -35,7 +35,7 @@ export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) 
 
     memory.page_table_lock.lock();
     defer memory.page_table_lock.unlock();
-    memory.page_table.map(null, @intFromPtr(virt), len, .small, map_flags) catch
+    memory.page_table.unmap(@intFromPtr(virt), len, .small) catch
         log.panic(null, "uacpi_kernel_unmap failed", .{});
     memory.page_table.store();
 }
@@ -188,3 +188,5 @@ pub fn init() void {
         return;
     }
 }
+
+pub const deinit = c.uacpi_state_reset;
