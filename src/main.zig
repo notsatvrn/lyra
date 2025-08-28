@@ -49,9 +49,9 @@ export fn _start() callconv(.c) noreturn {
 
     tty.clear();
     arch.boot.setup();
-    memory.page_table = memory.ManagedPageTable.fromUnmanaged(arch.paging.load());
-    memory.page_table.store(); // sanity check, should always work
-    memory.init();
+    memory.vmm.kernel.page_table = memory.vmm.ManagedPageTable.fromUnmanaged(arch.paging.load());
+    memory.vmm.kernel.page_table.store(); // sanity check, should always work
+    memory.pmm.init();
     smp.init() catch |e| log.panic(null, "smp init failed: {}", .{e});
     arch.util.enableInterrupts();
     clock.setup();
@@ -88,10 +88,6 @@ export fn _start() callconv(.c) noreturn {
 
     pci.detect() catch |e| log.panic(null, "pci device detection failed: {}", .{e});
     pci.print() catch |e| log.panic(null, "pci device printing failed: {}", .{e});
-    acpi.init();
-    // TEST: reinit ACPI
-    acpi.deinit();
-    memory.mmio_start = memory.addr_space_end - (memory.TB - 1);
     acpi.init();
 
     while (true) arch.util.wfi();

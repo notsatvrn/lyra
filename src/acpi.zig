@@ -13,31 +13,27 @@ export fn uacpi_kernel_get_rsdp(rsdp: *c.uacpi_phys_addr) callconv(.C) c.uacpi_s
 
 const memory = @import("memory.zig");
 const PageSize = memory.PageSize;
-const Entry = memory.ManagedPageTable.Entry;
+const vmm = memory.vmm;
+const Entry = vmm.ManagedPageTable.Entry;
 
 const map_flags = Entry{ .writable = true };
 
 export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.C) ?*anyopaque {
-    memory.page_table_lock.lock();
-    defer memory.page_table_lock.unlock();
-    const virt = memory.mmio_start;
-
-    logger.debug("map | 0x{x:0>16} -> 0x{x:0>16}, len: {}", .{ virt, phys, len });
-
-    memory.mmio_start += (@as(usize, len) + PageSize.small.bytes()) & ~@as(usize, 0xFFF);
-    memory.page_table.map(phys, virt, len, .small, map_flags) catch
+    vmm.kernel.page_table_lock.lock();
+    defer vmm.kernel.page_table_lock.unlock();
+    const virt = vmm.kernel.mmio_start;
+    vmm.kernel.mmio_start += (@as(usize, len) + PageSize.small.bytes()) & ~@as(usize, 0xFFF);
+    vmm.kernel.page_table.map(phys, virt, len, .small, map_flags) catch
         log.panic(null, "uacpi_kernel_map failed", .{});
-    memory.page_table.store();
+    vmm.kernel.page_table.store();
     return @ptrFromInt(virt);
 }
 export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) void {
-    logger.debug("unmap | 0x{x:0>16}, len: {}", .{ @intFromPtr(virt), len });
-
-    memory.page_table_lock.lock();
-    defer memory.page_table_lock.unlock();
-    memory.page_table.unmap(@intFromPtr(virt), len, .small) catch
+    vmm.kernel.page_table_lock.lock();
+    defer vmm.kernel.page_table_lock.unlock();
+    vmm.kernel.page_table.unmap(@intFromPtr(virt), len, .small) catch
         log.panic(null, "uacpi_kernel_unmap failed", .{});
-    memory.page_table.store();
+    vmm.kernel.page_table.store();
 }
 
 const log = @import("log.zig");
@@ -178,7 +174,7 @@ pub const SdtHeader = extern struct {
 // uACPI WRAPPERS
 
 pub fn init() void {
-    const buffer = memory.map(.small, 1) orelse {
+    const buffer = memory.page_allocator.alloc(u8, 4096) catch {
         log.panic(null, "failed to initialize uACPI: buffer creation failed", .{});
     };
 
