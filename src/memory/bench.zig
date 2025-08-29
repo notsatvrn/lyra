@@ -8,7 +8,7 @@ const memory = @import("../memory.zig");
 const KB = memory.KB;
 const GB = memory.GB;
 const page_bytes = memory.min_page_size;
-const unused = memory.unused;
+const unused = memory.pmm.unused;
 const page_allocator = memory.page_allocator;
 
 pub fn run() void {
@@ -80,12 +80,12 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
                     pages = @intFromFloat(pages_f);
                 }
                 bytes_total += pages * page_bytes;
-                storage[i] = .{ memory.map(.small, pages).?, pages };
+                storage[i] = .{ memory.pmm.map(.small, pages).?, pages };
             }
             for (0..divisor) |i| {
                 const ptr = storage[table[i]][0];
                 const pages = storage[table[i]][1];
-                _ = memory.unmap(ptr, .small, pages);
+                _ = memory.pmm.unmap(ptr, .small, pages);
             }
         }
     }
@@ -117,9 +117,9 @@ fn benchSeqRand(comptime pages: usize) void {
     for (0..outer_iter) |j| {
         const table = tables[j];
         for (0..size_seq) |i|
-            storage[i] = memory.map(.small, pages) orelse @panic("failed to allocate page");
+            storage[i] = memory.pmm.map(.small, pages) orelse @panic("failed to allocate page");
         for (0..size_seq) |i|
-            _ = memory.unmap(storage[table[i]], .small, pages);
+            _ = memory.pmm.unmap(storage[table[i]], .small, pages);
     }
     const end = clock.nanoSinceBoot();
 

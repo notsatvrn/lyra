@@ -32,18 +32,17 @@ pub const min_page_size = PageSize.small.bytes();
 pub const max_page_size = PageSize.large.bytes();
 
 pub inline fn pagesNeeded(bytes: usize, self: PageSize) usize {
-    const size_bytes = self.bytes();
-    return (bytes + (size_bytes - 1)) / size_bytes;
+    const shift = self.shift();
+    const page_size = @as(usize, 1) << shift;
+    return (bytes + page_size - 1) >> shift;
 }
 
 // BASIC ALLOCATORS
 
 const std = @import("std");
-const assert = std.debug.assert;
-const maxInt = std.math.maxInt;
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
-const builtin = @import("builtin");
 
 pub const PageAllocator = struct {
     pub const vtable = Allocator.VTable{
@@ -54,8 +53,8 @@ pub const PageAllocator = struct {
     };
 
     fn alloc(_: *anyopaque, n: usize, _: Alignment, _: usize) ?[*]u8 {
-        assert(n > 0);
-        if (n >= maxInt(usize) - min_page_size) return null;
+        std.debug.assert(n > 0);
+        if (n >= vmm.kernel.addr_space_end - min_page_size) return null;
         const block = pmm.map(.small, pagesNeeded(n, .small));
         return @ptrCast(block orelse return null);
     }

@@ -1,4 +1,5 @@
 //! An optimized "used" set implementation for allocators.
+//! Designed to be more performant for large sets and allocator operations.
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -16,7 +17,7 @@ const Self = @This();
 
 comptime {
     // let's keep things small.
-    assert(@sizeOf(Self) <= 32);
+    assert(@sizeOf(Self) == 32);
 }
 
 pub inline fn allocate(allocator: std.mem.Allocator, size: usize) !Self {
@@ -211,13 +212,10 @@ pub fn resizeRange(self: *Self, start: usize, size: usize, new_size: usize) bool
 
 pub fn unclaimRange(self: *Self, start: usize, n: usize) void {
     assert(start + n < self.len);
-
     // unset bits and reclaim in-use
     self.operation(start, n, .unset);
-
     // if this isn't tail range, return
     if (start + n != self.tail) return;
-
     // backtrack if range is from tail
     var tail = start / 64;
     while (tail >= 0) : (tail -= 1) {

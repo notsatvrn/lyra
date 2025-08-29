@@ -56,8 +56,6 @@ export fn _start() callconv(.c) noreturn {
     arch.util.enableInterrupts();
     clock.setup();
 
-    logger.info("{x}", .{arch.paging.load()[0].getAddr()});
-
     if (framebuffers.count != 0) fbsetup: {
         // set current framebuffer to mirror a virtual framebuffer (double-buffering)
 

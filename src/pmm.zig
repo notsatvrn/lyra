@@ -32,7 +32,7 @@ pub const Region = struct {
 
     comptime {
         // let's keep things small.
-        assert(@sizeOf(Self) <= 48);
+        assert(@sizeOf(Self) == 48);
     }
 
     // OPERATIONS
@@ -84,10 +84,6 @@ pub const Region = struct {
 
 // MEMORY DIRECTORY
 
-// we use a single page to store all region data
-// can hold up to like 85 regions at the moment
-// if we go over that something is probably wrong
-const max_regions = min_page_size / @sizeOf(Region);
 var regions: []Region = undefined;
 var total: usize = 0;
 
@@ -97,19 +93,19 @@ pub inline fn init() void {
     var largest: []u8 = "";
     var bitsets_size: usize = 0;
 
+    logger.debug("memory regions: ", .{});
     for (0..limine.mmap.response.count) |i| {
         const entry = limine.mmap.response.entries[i];
         if (entry.type != .usable) continue;
 
-        const pages = entry.len / min_page_size;
-        // align bitset length to 64-bits (8 bytes) for optimization
-        // allows us to iterate through the bitset by entire integers
+        const addr = @intFromPtr(entry.ptr);
+        const pages = entry.len >> PageSize.small.shift();
+        logger.debug("- 0x{x:0>16}, {} pages", .{ addr, pages });
+        // bitset implementation requires 64-bit alignment
         bitsets_size += (pages + 63) / 64;
-
         // put the address in Limine's higher-half direct map
         // absolutely required, if we don't do this writes cause crashes
         entry.ptr = limine.convertPointer(entry.ptr);
-
         // find the largest region and put region info at the start
         if (entry.len > largest.len) largest = entry.ptr[0..entry.len];
 
@@ -118,25 +114,25 @@ pub inline fn init() void {
 
     // setup regions
 
-    var len = usable;
-    if (usable > max_regions) {
-        logger.warn("unable to map all memory regions", .{});
-        len = max_regions;
-    }
+    // make sure bitset space still has 64-bit alignment
+    const regions_bytes = (usable * @sizeOf(Region) + 63) / 64;
+    const info_space = regions_bytes + bitsets_size * 8;
+    const info_pages = pagesNeeded(info_space, .small);
+    if (info_pages * min_page_size > largest.len)
+        @panic("pmm init failed: not enough memory for region info");
 
-    regions = @as([*]Region, @ptrCast(@alignCast(largest.ptr)))[0..len];
+    regions = @as([*]Region, @ptrCast(@alignCast(largest.ptr)))[0..usable];
+    var b: [*]u64 = @ptrCast(@alignCast(largest.ptr + regions_bytes));
+    std.crypto.secureZero(u64, b[0..bitsets_size]);
 
     // write regions
-
-    var b: [*]u64 = @ptrCast(@alignCast(largest.ptr + min_page_size));
-    std.crypto.secureZero(u64, b[0..bitsets_size]);
 
     var s: usize = 0;
     for (0..limine.mmap.response.count) |i| {
         const entry = limine.mmap.response.entries[i];
         if (entry.type != .usable) continue;
 
-        const pages = entry.len / min_page_size;
+        const pages = entry.len >> PageSize.small.shift();
         var region = Region{
             .ptr = @ptrCast(@alignCast(entry.ptr)),
             .set = .{ .ptr = b, .len = pages },
@@ -144,13 +140,12 @@ pub inline fn init() void {
 
         // mark pages holding region info as used
         if (largest.ptr == entry.ptr) {
-            const pages_needed = pagesNeeded(bitsets_size * 8, .small) + 1;
-            region.set.used += pages_needed;
-            region.set.tail = pages_needed;
-            for (0..pages_needed) |j| {
-                const byte = j / 8;
-                const offset: u3 = @truncate(j);
-                b[byte] |= @as(u8, 1) << offset;
+            region.set.used += info_pages;
+            region.set.tail = info_pages;
+            for (0..info_pages) |j| {
+                const int = j / 64;
+                const offset: u6 = @truncate(j);
+                b[int] |= @as(u64, 1) << offset;
             }
         }
 
