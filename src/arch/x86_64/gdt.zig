@@ -7,9 +7,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const memory = @import("../../memory.zig");
 
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "x86-64/gdt" };
-
 // STANDARD SEGMENT STRUCTURES
 
 // Access byte structure.
@@ -141,7 +138,6 @@ pub inline fn init() void {
 
 // Create a new GDT with a TSS for each CPU.
 pub fn update(cpus: usize) !void {
-    logger.info("reinit global descriptor table for {} cpus", .{cpus});
     // Allocate a new GDT with enough space to store a TSS for each CPU.
     gdt = try memory.allocator.alloc(SegmentDescriptor, 5 + (cpus * 2));
     // Allocate a Task State Segment for each new CPU.

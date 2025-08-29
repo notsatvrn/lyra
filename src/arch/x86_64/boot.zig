@@ -5,8 +5,7 @@ const int = @import("int.zig");
 const util = @import("util.zig");
 const cpuid = @import("cpuid.zig");
 
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "x86-64/boot" };
+const logger = @import("../../log.zig").Logger{ .name = "x86-64/boot" };
 
 // INITIAL SETUP
 
@@ -24,7 +23,7 @@ pub inline fn setup() void {
     cpuid.identify();
     logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
     if (!cpuid.features.invariant_tsc)
-        log.panic(null, "Invariant TSC unavailable!", .{});
+        logger.panic("- invariant TSC not supported!", .{});
     if (cpuid.features.x2apic)
         logger.info("- x2apic is supported", .{});
 }

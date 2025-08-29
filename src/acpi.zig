@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const logger = @import("log.zig").Logger{ .name = "acpi" };
+
 // uACPI IMPLEMENTATION
 
 const c = @cImport(@cInclude("uacpi/uacpi.h"));
@@ -24,7 +26,7 @@ export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(
     const virt = vmm.kernel.mmio_start;
     vmm.kernel.mmio_start += (@as(usize, len) + PageSize.small.bytes()) & ~@as(usize, 0xFFF);
     vmm.kernel.page_table.map(phys, virt, len, .small, map_flags) catch
-        log.panic(null, "uacpi_kernel_map failed", .{});
+        logger.panic("uacpi_kernel_map failed", .{});
     vmm.kernel.page_table.store();
     return @ptrFromInt(virt);
 }
@@ -32,12 +34,9 @@ export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) 
     vmm.kernel.page_table_lock.lock();
     defer vmm.kernel.page_table_lock.unlock();
     vmm.kernel.page_table.unmap(@intFromPtr(virt), len, .small) catch
-        log.panic(null, "uacpi_kernel_unmap failed", .{});
+        logger.panic("uacpi_kernel_unmap failed", .{});
     vmm.kernel.page_table.store();
 }
-
-const log = @import("log.zig");
-const logger = log.Logger{ .name = "uACPI" };
 
 export fn uacpi_kernel_log(
     level: c.uacpi_log_level,
@@ -79,7 +78,7 @@ export fn uacpi_kernel_log(
 
 export fn uacpi_kernel_alloc(size: c.uacpi_size) callconv(.C) ?*anyopaque {
     const mem = memory.allocator.alloc(u8, @as(usize, size)) catch
-        log.panic(null, "uacpi_kernel_alloc failed", .{});
+        logger.panic("uacpi_kernel_alloc failed", .{});
     return @ptrCast(mem);
 }
 export fn uacpi_kernel_free(mem: ?*anyopaque, size: c.uacpi_size) callconv(.C) void {
@@ -104,7 +103,7 @@ var lock_pool = std.heap.MemoryPool(SpinLock).init(memory.allocator);
 
 export fn uacpi_kernel_create_spinlock() callconv(.C) c.uacpi_handle {
     const lock = lock_pool.create() catch
-        log.panic(null, "uacpi_kernel_create_spinlock failed", .{});
+        logger.panic("uacpi_kernel_create_spinlock failed", .{});
     return @ptrCast(lock);
 }
 export fn uacpi_kernel_free_spinlock(lock: c.uacpi_handle) callconv(.C) void {
@@ -175,12 +174,12 @@ pub const SdtHeader = extern struct {
 
 pub fn init() void {
     const buffer = memory.page_allocator.alloc(u8, 4096) catch {
-        log.panic(null, "failed to initialize uACPI: buffer creation failed", .{});
+        logger.panic("failed to initialize uACPI: buffer creation failed", .{});
     };
 
     const status = c.uacpi_setup_early_table_access(@ptrCast(buffer), 4096);
     if (status != c.UACPI_STATUS_OK) {
-        log.panic(null, "failed to initialize uACPI: {}", .{status});
+        logger.panic("failed to initialize uACPI: {}", .{status});
         return;
     }
 }

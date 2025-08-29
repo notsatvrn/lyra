@@ -77,6 +77,11 @@ pub const Logger = struct {
         lock.unlock();
     }
 
+    pub fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
+        @branchHint(.cold);
+        std.debug.panic("{s}: " ++ fmt, .{self.name} ++ args);
+    }
+
     pub fn info(self: Logger, comptime fmt: []const u8, args: anytype) void {
         self.log(.info, fmt, args);
     }

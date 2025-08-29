@@ -13,10 +13,11 @@ pub const kernel = struct {
     const paging = @import("arch.zig").paging;
     const Lock = @import("utils").lock.SpinSharedLock;
 
-    pub var page_table: ManagedPageTable = undefined;
+    pub var page_table: ManagedPageTable = .{ .top = undefined };
+    pub var page_table_lock: Lock = .{};
+
     pub const addr_space_end = std.math.maxInt(usize);
     pub var mmio_start: usize = addr_space_end - (memory.TB - 1);
-    pub var page_table_lock: Lock = .{};
 };
 
 pub const io = struct {

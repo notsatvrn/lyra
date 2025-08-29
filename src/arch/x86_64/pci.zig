@@ -1,13 +1,9 @@
 const std = @import("std");
 
-const pci = @import("../../pci.zig");
-const Class = pci.Class;
-
 const io = @import("io.zig");
-
+const pci = @import("../../pci.zig");
 // only for debugging purposes
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "x86-64/pci" };
+const logger = @import("../../log.zig").Logger{ .name = "x86-64/pci" };
 
 // CONFIGURATION SPACE (ACCESS MECHANISM #1)
 // https://osdev.wiki/wiki/PCI#Configuration_Space_Access_Mechanism_#1
@@ -39,11 +35,11 @@ pub inline fn configRead(comptime T: type, location: pci.DeviceLocation, offset:
     };
 }
 
-pub inline fn detect() !void {
-    try detectBus(0);
+pub inline fn detect(devices: *pci.Devices) !void {
+    try detectBus(0, devices);
 }
 
-fn detectBus(bus: u8) !void {
+fn detectBus(bus: u8, devices: *pci.Devices) !void {
     slots: for (0..32) |slot| {
         for (0..8) |func| {
             const location = pci.DeviceLocation{
@@ -61,7 +57,7 @@ fn detectBus(bus: u8) !void {
             const primary = configRead(u8, location, 11);
             const subclass = configRead(u8, location, 10);
             const interface = configRead(u8, location, 9);
-            const class = Class.parse(primary, subclass, interface) orelse {
+            const class = pci.Class.parse(primary, subclass, interface) orelse {
                 logger.debug(
                     "invalid hardware found {x} {x} {x}",
                     .{ primary, subclass, interface },
@@ -70,15 +66,14 @@ fn detectBus(bus: u8) !void {
             };
 
             const desc = pci.DeviceDescriptor{ .vendor = vendor, .device = device };
-            try pci.devices.put(location, .{ .desc = desc, .class = class });
+            try devices.put(location, .{ .desc = desc, .class = class });
 
             const header_type = configRead(u8, location, 14);
 
             if (header_type & 0xF == 0x1) {
                 // PCI-to-PCI bridge, let's read the next bus
                 const next_bus = configRead(u8, location, 0x19);
-                logger.debug("found a PCI-to-PCI bridge, reading bus {}", .{next_bus});
-                try detectBus(next_bus);
+                try detectBus(next_bus, devices);
             }
 
             if (func == 0) {

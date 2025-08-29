@@ -1,5 +1,4 @@
-const log = @import("../../log.zig");
-const logger = log.Logger{ .name = "aarch64/boot" };
+const logger = @import("../../log.zig").Logger{ .name = "aarch64/boot" };
 
 // INITIAL SETUP
 

@@ -3,8 +3,7 @@ const std = @import("std");
 const memory = @import("memory.zig");
 const TreeMap = @import("utils").trees.Map;
 
-const log = @import("log.zig");
-const logger = log.Logger{ .name = "pci" };
+const logger = @import("log.zig").Logger{ .name = "pci" };
 
 // DEVICES
 
@@ -20,17 +19,19 @@ fn cmpLoc(a: DeviceLocation, b: DeviceLocation) std.math.Order {
 pub const Devices = TreeMap(DeviceLocation, DeviceInfo, cmpLoc, .avl, true);
 pub var devices = Devices.init(memory.allocator);
 
-pub inline fn detect() !void {
-    logger.info("detecting devices", .{});
-    try @import("arch.zig").pciDetect();
+pub inline fn detect() void {
+    @import("arch.zig").pciDetect(&devices) catch |e|
+        logger.panic("device detection failed: {}", .{e});
 }
 
-pub inline fn print() !void {
+pub inline fn print() void {
     var iterator = devices.iterator(memory.allocator);
-    logger.info("devices:", .{});
+    logger.debug("devices:", .{});
 
-    while (try iterator.next()) |device| {
-        logger.info("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {s}", .{
+    while (iterator.next() catch
+        logger.panic("device printing failed (OOM)", .{})) |device|
+    {
+        logger.debug("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {s}", .{
             device.key.bus,
             device.key.slot,
             device.key.func,

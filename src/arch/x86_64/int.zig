@@ -8,7 +8,7 @@ pub const idt = @import("int/idt.zig");
 pub const isr = @import("int/isr.zig");
 pub const InterruptStack = isr.InterruptStack;
 
-const log = @import("../../log.zig");
+const std = @import("std");
 const util = @import("util.zig");
 const io = @import("io.zig");
 
@@ -124,16 +124,16 @@ fn unhandled(stack: *InterruptStack) callconv(.c) noreturn {
     switch (n) {
         EXCEPTION_0...EXCEPTION_31 => {
             n -= EXCEPTION_0;
-            log.panic(null, "Unhandled exception: {s} ({} | {b})", .{ EXCEPTION_NAMES[n], n, stack.error_code });
+            std.debug.panic("Unhandled exception: {s} ({} | {b})", .{ EXCEPTION_NAMES[n], n, stack.error_code });
         },
 
         IRQ_0...IRQ_15 => {
             n -= IRQ_0;
-            log.panic(null, "Unhandled IRQ: {}", .{n});
+            std.debug.panic("Unhandled IRQ: {}", .{n});
         },
 
         else => {
-            log.panic(null, "Invalid interrupt: {}", .{n});
+            std.debug.panic("Invalid interrupt: {}", .{n});
         },
     }
 }

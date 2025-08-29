@@ -20,17 +20,17 @@ pub inline fn init() !Self {
     return .{ .top = top };
 }
 
-pub inline fn fromUnmanaged(top: *PageTable) Self {
-    return .{ .top = top };
-}
-
 pub inline fn deinit(self: Self) void {
     memory.page_allocator.destroy(self.top);
 }
 
 // READ OPERATIONS
 
-pub fn store(self: Self) void {
+pub inline fn load(self: *Self) void {
+    self.top = paging.load();
+}
+
+pub inline fn store(self: Self) void {
     paging.store(self.top);
 }
 

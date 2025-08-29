@@ -2,20 +2,20 @@ const arch = @import("arch.zig");
 const limine = @import("limine.zig");
 const memory = @import("memory.zig");
 
-const log = @import("log.zig");
-const logger = log.Logger{ .name = "smp" };
+const logger = @import("log.zig").Logger{ .name = "smp" };
 
 // INITIALIZATION
 
-pub fn init() !void {
+pub fn init() void {
     const cpus = limine.cpus.response;
 
     // not sure if this can happen, but if it does
     // i don't want to deal with it at the moment
     if (cpus.cpus[0].id != cpus.bsp_id)
-        @panic("cpu 0 id != bootstrap id");
+        logger.panic("cpu 0 id != bootstrap id", .{});
 
-    try arch.prepCpus(cpus.count);
+    arch.prepCpus(cpus.count) catch |e|
+        logger.panic("prepping {} cpus failed: {}", .{ cpus.count, e });
     arch.setCpu(0);
 
     for (0..cpus.count) |i| {

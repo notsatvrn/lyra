@@ -1,8 +1,7 @@
 const std = @import("std");
 const clock = @import("../clock.zig");
 
-const log = @import("../log.zig");
-const logger = log.Logger{ .name = "memory/bench" };
+const logger = @import("../log.zig").Logger{ .name = "memory/bench" };
 
 const memory = @import("../memory.zig");
 const KB = memory.KB;
@@ -46,7 +45,8 @@ inline fn writeRNGTable(table: []usize) void {
 }
 
 inline fn buildRNGTable(size: usize) []usize {
-    const table = memory.page_allocator.alloc(usize, size) catch @panic("failed to build RNG table");
+    const table = memory.page_allocator.alloc(usize, size) catch
+        logger.panic("failed to build RNG table", .{});
     writeRNGTable(table);
     return table;
 }
@@ -63,8 +63,10 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
     var random = rng.random();
     var bytes_total: usize = 0;
 
-    var storage = page_allocator.alloc(struct { [*]u8, usize }, divisor) catch @panic("failed to build bench storage");
-    var tables = page_allocator.alloc([]usize, iters) catch @panic("failed to build RNG table directory");
+    var storage = page_allocator.alloc(struct { [*]u8, usize }, divisor) catch
+        logger.panic("failed to build bench storage", .{});
+    var tables = page_allocator.alloc([]usize, iters) catch
+        logger.panic("failed to build RNG table directory", .{});
     for (0..iters) |i| tables[i] = buildRNGTable(divisor);
 
     const start = clock.nanoSinceBoot();
@@ -109,15 +111,18 @@ fn benchSeqRand(comptime pages: usize) void {
 
     logger.debug("sequential {}K alloc / random dealloc ({} iters)", .{ pages * (page_bytes / KB), size_seq * outer_iter });
 
-    var storage = page_allocator.alloc([*]u8, size_seq) catch @panic("failed to build bench storage");
-    var tables = page_allocator.alloc([]usize, outer_iter) catch @panic("failed to build RNG table directory");
+    var storage = page_allocator.alloc([*]u8, size_seq) catch
+        logger.panic("failed to build bench storage", .{});
+    var tables = page_allocator.alloc([]usize, outer_iter) catch
+        logger.panic("failed to build RNG table directory", .{});
     for (0..outer_iter) |i| tables[i] = buildRNGTable(size_seq);
 
     const start = clock.nanoSinceBoot();
     for (0..outer_iter) |j| {
         const table = tables[j];
         for (0..size_seq) |i|
-            storage[i] = memory.pmm.map(.small, pages) orelse @panic("failed to allocate page");
+            storage[i] = memory.pmm.map(.small, pages) orelse
+                logger.panic("failed to allocate page", .{});
         for (0..size_seq) |i|
             _ = memory.pmm.unmap(storage[table[i]], .small, pages);
     }

@@ -10,8 +10,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const limine = @import("limine.zig");
-const log = @import("log.zig");
-const logger = log.Logger{ .name = "pmm" };
+const logger = @import("log.zig").Logger{ .name = "pmm" };
 
 const memory = @import("memory.zig");
 const PageSize = memory.PageSize;
@@ -119,7 +118,7 @@ pub inline fn init() void {
     const info_space = regions_bytes + bitsets_size * 8;
     const info_pages = pagesNeeded(info_space, .small);
     if (info_pages * min_page_size > largest.len)
-        @panic("pmm init failed: not enough memory for region info");
+        logger.panic("not enough memory for region info", .{});
 
     regions = @as([*]Region, @ptrCast(@alignCast(largest.ptr)))[0..usable];
     var b: [*]u64 = @ptrCast(@alignCast(largest.ptr + regions_bytes));

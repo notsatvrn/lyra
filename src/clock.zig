@@ -1,8 +1,7 @@
 const std = @import("std");
 const arch = @import("arch.zig").clock;
 
-const log = @import("log.zig");
-const logger = log.Logger{ .name = "clock" };
+const logger = @import("log.zig").Logger{ .name = "clock" };
 
 // COUNTER-BASED CLOCK
 // https://wiki.osdev.org/TSC - x86-64
