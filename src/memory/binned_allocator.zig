@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const lock = @import("utils").lock;
+const builtin = @import("builtin");
 
 pub const Config = struct {
     /// Whether to synchronize usage of this allocator.
@@ -10,7 +11,7 @@ pub const Config = struct {
 
     /// Whether to warn about leaked memory on deinit.
     /// This reporting is extremely limited; for proper leak checking use GeneralPurposeAllocator.
-    report_leaks: bool = true,
+    report_leaks: bool = builtin.mode == .ReleaseSafe or builtin.mode == .Debug,
 };
 
 pub fn BinnedAllocator(comptime config: Config) type {

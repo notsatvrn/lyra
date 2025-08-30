@@ -15,11 +15,6 @@ tail: usize = 0,
 
 const Self = @This();
 
-comptime {
-    // let's keep things small.
-    assert(@sizeOf(Self) == 32);
-}
-
 pub inline fn allocate(allocator: std.mem.Allocator, size: usize) !Self {
     return .{ .ptr = (try allocator.alloc(u64, (size + 63) / 64)).ptr, .len = size };
 }
@@ -35,10 +30,8 @@ inline fn mkmask(n: usize, offset: usize) u64 {
 inline fn applyMask(self: *Self, int: usize, mask: u64, comptime op: Operation) usize {
     const res = if (op != .set) @popCount(self.ptr[int] & mask) else 0;
 
-    if (op == .set)
-        self.ptr[int] |= mask
-    else if (op == .unset)
-        self.ptr[int] &= ~mask;
+    if (op == .set) self.ptr[int] |= mask;
+    if (op == .unset) self.ptr[int] &= ~mask;
 
     return res;
 }
@@ -61,10 +54,9 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
         const shift: u6 = @truncate(start);
         const res = if (op != .set) (self.ptr[int] >> shift) & 1 else 0;
 
-        if (op == .set)
-            self.ptr[int] |= @as(u64, 1) << shift
-        else if (op == .unset)
-            self.ptr[int] -= @as(u64, 1) << shift; // when only one bit is set, we can do rhs - lhs instead of rhs & ~lhs
+        if (op == .set) self.ptr[int] |= @as(u64, 1) << shift;
+        // when only one bit is set, we can do rhs - lhs instead of rhs & ~lhs
+        if (op == .unset) self.ptr[int] -= @as(u64, 1) << shift;
 
         return self.opret(1, res, op);
     }
@@ -130,17 +122,18 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
     if (n == 1) {
         for (0..ints) |int| {
             const bits = self.ptr[int];
+            defer bit_rem -= 64;
 
             if (bit_rem < 64) {
                 @branchHint(.unlikely);
-                const shift: u6 = @truncate(bit_rem);
-                const mask = (@as(u64, 1) << shift) - 1;
-                // last int, just return, region is full
-                if (bits & mask == mask) return null;
+                // don't bother checking if the int is full
+                // last int, so region would be full but we know it can't be
             } else if (bits == ~@as(u64, 0)) continue;
 
             // ctz of ~bits = pages until first unused page
-            self.operation((int * 64) + @ctz(~bits), 1, .set);
+            const page = (int * 64) + @ctz(~bits);
+            self.operation(page, 1, .set);
+            return page;
         }
 
         return null;

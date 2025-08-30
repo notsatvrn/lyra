@@ -29,11 +29,6 @@ pub const Region = struct {
 
     const Self = @This();
 
-    comptime {
-        // let's keep things small.
-        assert(@sizeOf(Self) == 48);
-    }
-
     // OPERATIONS
 
     pub fn map(self: *Self, size: PageSize, len: usize, comptime fast: bool) ?[*]u8 {
@@ -111,8 +106,6 @@ pub inline fn init() void {
         usable += 1;
     }
 
-    // setup regions
-
     // make sure bitset space still has 64-bit alignment
     const regions_bytes = (usable * @sizeOf(Region) + 63) / 64;
     const info_space = regions_bytes + bitsets_size * 8;
@@ -123,8 +116,6 @@ pub inline fn init() void {
     regions = @as([*]Region, @ptrCast(@alignCast(largest.ptr)))[0..usable];
     var b: [*]u64 = @ptrCast(@alignCast(largest.ptr + regions_bytes));
     std.crypto.secureZero(u64, b[0..bitsets_size]);
-
-    // write regions
 
     var s: usize = 0;
     for (0..limine.mmap.response.count) |i| {

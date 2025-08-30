@@ -81,5 +81,26 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
                 return;
             }
         }
+
+        // MULTIPLE OBJECT OPERATIONS
+
+        pub fn createMany(self: *Self, n: usize) ![]T {
+            if (n > obj_count) return error.TooManyObjects;
+            // fast path: use a whole bin
+            if (n == obj_count) {
+                for (self.bins.items) |b|
+                    if (b.free_set.count() == obj_count)
+                        return @ptrCast(b.objects);
+
+                return @ptrCast(try self.createBin());
+            }
+
+            try self.addBin(true);
+            const bin = &self.bins.items[self.bins.items.len - 1];
+            const range = std.bit_set.Range{ .start = 0, .end = n };
+            bin.free_set.setRangeValue(range, true);
+
+            return bin.objects[0..n];
+        }
     };
 }

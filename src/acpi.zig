@@ -173,15 +173,12 @@ pub const SdtHeader = extern struct {
 // uACPI WRAPPERS
 
 pub fn init() void {
-    const buffer = memory.page_allocator.alloc(u8, 4096) catch {
+    const buffer = memory.page_allocator.alloc(u8, 4096) catch
         logger.panic("failed to initialize uACPI: buffer creation failed", .{});
-    };
 
     const status = c.uacpi_setup_early_table_access(@ptrCast(buffer), 4096);
-    if (status != c.UACPI_STATUS_OK) {
+    if (status != c.UACPI_STATUS_OK)
         logger.panic("failed to initialize uACPI: {}", .{status});
-        return;
-    }
 }
 
 pub const deinit = c.uacpi_state_reset;

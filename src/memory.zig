@@ -1,6 +1,5 @@
 pub const pmm = @import("pmm.zig");
 pub const vmm = @import("vmm.zig");
-pub const io = vmm.io;
 
 // MATH UTILITIES
 

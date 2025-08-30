@@ -129,41 +129,28 @@ pub fn identify() void {
         // zig fmt: on
     }
 
-    // check for invariant TSC support
-    // https://github.com/dterei/tsc/
-    features.invariant_tsc = asm (
-        \\.intel_syntax noprefix
-        \\
-        \\mov eax, 0x80000007
-        \\cpuid
-        \\mov eax, 1
-        \\test edx, 1 << 8
-        \\jnz endNonStopTSC
-        \\
-        \\xor eax, eax
-        \\endNonStopTSC:
-        \\
-        \\.att_syntax prefix
-        : [_] "={eax}" (-> bool),
-        :
-        : "eax", "ebx", "ecx", "edx"
-    );
+    // features on CPUID leaf 8000'0007h
+    {
+        var edx: u32 = undefined;
+        asm volatile ("cpuid"
+            : [_] "={edx}" (edx),
+            : [_] "{eax}" (0x8000_0007),
+            : "eax", "ebx", "ecx"
+        );
+        features.invariant_tsc = (edx >> 8) & 1 == 1;
+    }
 
     sse: {
         // enable SSE; also required for FPU / AVX
         // https://osdev.wiki/wiki/SSE#Adding_support
         asm volatile (
-            \\.intel_syntax noprefix
-            \\
-            \\mov rax, cr0
-            \\and ax, 0xFFFB
-            \\or ax, 0x2
-            \\mov cr0, rax
-            \\mov rax, cr4
-            \\or ax, 3 << 9
-            \\mov cr4, rax
-            \\
-            \\.att_syntax prefix
+            \\mov %cr0, %rax
+            \\and $0xFFFB, %ax
+            \\or $0x2, %ax
+            \\mov %rax, %cr0
+            \\mov %cr4, %rax
+            \\or $(3 << 9), %ax
+            \\mov %rax, %cr4
             ::: "rax");
 
         if (!features.xsave) break :sse;

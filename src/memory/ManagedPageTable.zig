@@ -16,12 +16,15 @@ const Self = @This();
 // INIT / DEINIT
 
 pub inline fn init() !Self {
-    const top = try memory.page_allocator.create(PageTable);
-    return .{ .top = top };
+    var self = Self{ .top = undefined };
+    self.top = try self.pool.create();
+    return self;
 }
 
-pub inline fn deinit(self: Self) void {
-    memory.page_allocator.destroy(self.top);
+pub inline fn deinit(self: *Self) void {
+    self.unmap(0, std.math.maxInt(usize), .large);
+    self.pool.destroy(self.top);
+    self.* = undefined;
 }
 
 // READ OPERATIONS
