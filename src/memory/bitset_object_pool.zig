@@ -1,6 +1,7 @@
 const std = @import("std");
 const lock = @import("utils").lock;
 const memory = @import("../memory.zig");
+const UsedSet = @import("UsedSet.zig");
 const allocator = memory.allocator;
 
 pub const Config = struct {
@@ -23,7 +24,7 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
         pub const FreeSet = std.bit_set.StaticBitSet(obj_count);
         pub const Bin = struct {
             objects: *Objects,
-            free_set: FreeSet,
+            used_set: UsedSet,
         };
 
         bins: std.ArrayListUnmanaged(Bin) = .{},
@@ -32,16 +33,19 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
 
         // WHOLE BIN OPERATIONS
 
-        inline fn addBin(self: *Self, free: bool) !void {
+        inline fn addBin(self: *Self, n: usize) !void {
             const objects = try allocator.alloc(T, obj_count);
+            var used_set = try UsedSet.allocate(allocator, obj_size);
+            _ = used_set.claimRangeFast(n);
+
             try self.bins.append(allocator, .{
                 .objects = @ptrCast(objects),
-                .free_set = if (free) .initFull() else .initEmpty(),
+                .used_set = used_set,
             });
         }
 
         pub fn createBin(self: *Self) !*Objects {
-            try self.addBin(false);
+            try self.addBin(obj_count);
             return self.bins.items[self.bins.items.len - 1].objects;
         }
 
@@ -49,6 +53,7 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
             for (self.bins.items, 0..) |b, i| {
                 if (bin != b.objects) continue;
                 memory.allocator.free(b.objects);
+                memory.allocator.free(b.used_set.ptr[0..obj_count]);
                 self.bins.swapRemove(i);
                 return;
             }
@@ -56,19 +61,13 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
 
         // SINGLE OBJECT OPERATIONS
 
-        inline fn fromBin(bin: *Bin) ?*T {
-            const obj_idx = bin.free_set.findFirstSet() orelse return null;
-            bin.free_set.unset(obj_idx);
-            return &bin.objects[obj_idx];
-        }
-
         pub fn create(self: *Self) !*T {
             for (self.bins.items) |*bin|
-                if (fromBin(bin)) |obj|
-                    return obj;
+                if (bin.used_set.claimRange(1)) |idx|
+                    return &bin.objects[idx];
 
-            try self.addBin(true);
-            return fromBin(&self.bins.items[self.bins.items.len - 1]).?;
+            try self.addBin(1); // add a bin with one allocated
+            return &self.bins.items[self.bins.items.len - 1].objects[0];
         }
 
         pub fn destroy(self: *Self, object: *T) void {
@@ -77,7 +76,8 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
                 const start = @intFromPtr(bin.objects);
                 const end = start + bin_size;
                 if (!(addr >= start and addr < end)) continue;
-                bin.free_set.set((addr - start) / obj_size);
+                const idx = (addr - start) / obj_size;
+                bin.used_set.unclaimRange(idx, 1);
                 return;
             }
         }
@@ -88,19 +88,34 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
             if (n > obj_count) return error.TooManyObjects;
             // fast path: use a whole bin
             if (n == obj_count) {
-                for (self.bins.items) |b|
-                    if (b.free_set.count() == obj_count)
-                        return @ptrCast(b.objects);
-
+                for (self.bins.items) |*bin| {
+                    if (bin.used_set.used != 0) continue;
+                    _ = bin.used_set.claimRangeFast(obj_count);
+                    return @ptrCast(bin.objects);
+                }
                 return @ptrCast(try self.createBin());
             }
 
-            try self.addBin(true);
-            const bin = &self.bins.items[self.bins.items.len - 1];
-            const range = std.bit_set.Range{ .start = 0, .end = n };
-            bin.free_set.setRangeValue(range, true);
+            for (self.bins.items) |*bin|
+                if (bin.used_set.claimRange(n)) |idx|
+                    return bin.objects[idx .. idx + n];
 
-            return bin.objects[0..n];
+            try self.addBin(n); // add a bin with n allocated
+            return self.bins.items[self.bins.items.len - 1].objects[0..n];
+        }
+
+        pub fn destroyMany(self: *Self, objects: []T) !void {
+            if (objects.len > obj_count) return error.TooManyObjects;
+            const start = @intFromPtr(objects.ptr);
+            const end = start + (objects.len * obj_size);
+            for (self.bins.items) |*bin| {
+                const b_start = @intFromPtr(bin.objects);
+                const b_end = start + bin_size;
+                if (!(start >= b_start and end < b_end)) continue;
+                const idx = (start - b_start) / obj_size;
+                bin.used_set.unclaimRange(idx, objects.len);
+                return;
+            }
         }
     };
 }
