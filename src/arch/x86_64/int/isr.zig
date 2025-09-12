@@ -66,6 +66,8 @@ pub inline fn setupCpu(cpu: usize) void {
 
 /// Installs the Interrupt Service Routines into the IDT.
 pub fn install() void {
+    @setEvalBranchQuota(10000);
+
     // Exceptions and IRQs.
     inline for (0..48) |i| {
         const name = std.fmt.comptimePrint("isr{}", .{i});

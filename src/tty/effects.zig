@@ -125,15 +125,7 @@ pub const Ansi = union(enum) {
         set_effect: StatefulEffect,
         unset_effect: Effect,
 
-        pub fn format(
-            self: Sgr,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
-
+        pub fn format(self: Sgr, writer: *std.Io.Writer) !void {
             switch (self) {
                 .reset => try writer.writeByte('0'),
                 .set_color => |v| try writeColorSGR(v.color, writer, v.part),
@@ -147,14 +139,7 @@ pub const Ansi = union(enum) {
 
     pub const esc = '\x1B';
 
-    pub fn format(
-        self: Ansi,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Ansi, writer: *std.Io.Writer) !void {
         if (true) return;
 
         try writer.writeByte(esc);

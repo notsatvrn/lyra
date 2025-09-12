@@ -41,10 +41,6 @@ pub const BootloaderInfoResponse = extern struct {
     version: [*:0]const u8,
 };
 
-pub inline fn bootldrName() []const u8 {
-    return std.mem.span(bootldr.response.name);
-}
-
 // FRAMEBUFFER
 
 pub export var fb linksection(".requests") =
@@ -176,9 +172,7 @@ pub const PagingModeResponse = extern struct {
     mode: u64,
 };
 
-pub inline fn pagingLevels() u3 {
-    return @truncate(paging_mode.response.mode + (5 - highest_paging_mode));
-}
+pub var paging_levels: u3 = 0;
 
 // SMBIOS
 
@@ -258,7 +252,7 @@ pub const MediaType = enum(u32) { generic = 0, optical = 1, tftp = 2 };
 
 pub const File = extern struct {
     revision: u64,
-    address: *const void,
+    address: u64,
     size: u64,
     path: [*:0]const u8,
     cmdline: [*:0]const u8,
@@ -272,20 +266,6 @@ pub const File = extern struct {
     gpt_part_uuid: Uuid,
     part_uuid: Uuid,
 };
-
-pub inline fn cmdline() []const u8 {
-    return std.mem.span(kfile.response.file.cmdline);
-}
-
-pub inline fn kstart() usize {
-    return @intFromPtr(kfile.response.file.address);
-}
-pub inline fn ksize() usize {
-    return kfile.response.file.size;
-}
-pub inline fn kend() usize {
-    return kstart() + ksize();
-}
 
 // KERNEL ADDRESS
 
@@ -387,3 +367,9 @@ const CpuRiscV64 = extern struct {
     goto_addr: CpuEntry,
     extra: u64,
 };
+
+// PARSING
+
+pub inline fn parse() void {
+    paging_levels = @truncate(paging_mode.response.mode + (5 - highest_paging_mode));
+}

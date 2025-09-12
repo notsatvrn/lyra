@@ -4,13 +4,13 @@
     .fingerprint = 0x2c288ec2669c1edf,
     .dependencies = .{
         .dtb = .{
-            .url = "git+https://github.com/kivikakk/dtb.zig.git#15c01b868fd8d9acd6dbc484708e0459a4a96185",
-            .hash = "dtb-0.0.0-gULdmfUFAgDNV56omvXDB7T9N95qwxpVpiqY248YvjJJ",
+            .url = "git+https://github.com/kivikakk/dtb.zig#74945f6e1801602d99cfd90bbbbe16e8a3c2cb67",
+            .hash = "dtb-0.0.0-gULdmfYDAgCarNiOCj8Wj7QqXImFyMvrax96tpg4qNBW",
             .lazy = true,
         },
         .utils = .{
-            .url = "git+https://github.com/notsatvrn/zig-utils#9916cc4a2f2a8965b7c4161aa4f52f029b0de79b",
-            .hash = "utils-0.0.0-mXwaHhKeAADW-uILdCnbHCEqWexiXBXxbtUeSejaqN1N",
+            .url = "git+https://github.com/notsatvrn/zig-utils#9a65f0a38f530c226d1ce78d4b3f7dc556bb9d1c",
+            .hash = "utils-0.0.0-mXwaHm-aAACpcn-OlC3YRlK95gqrkL1tpftEVZBODAOT",
         },
     },
     .paths = .{

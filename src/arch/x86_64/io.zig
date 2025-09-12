@@ -35,8 +35,7 @@ pub inline fn ins(comptime T: type, port: u16, len: usize) [len]T {
         : [port] "{dx}" (port),
           [addr] "0" (addr),
           [len] "1" (len),
-        : "memory", "cc"
-    );
+        : .{ .memory = true, .cc = true });
 
     return data;
 }

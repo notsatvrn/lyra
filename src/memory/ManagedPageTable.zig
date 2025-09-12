@@ -46,7 +46,16 @@ pub inline fn physFromVirt(self: Self, addr: usize) ?usize {
 const limine = @import("../limine.zig");
 
 /// Map a section of virtual memory to a physical address.
-pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
+pub fn map(self: *Self, phys: usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
+    try self.mapInner(phys, virt, len, size, flags.getFlags(true));
+}
+
+/// Unmap a section of virtual memory.
+pub fn unmap(self: *Self, virt: usize, len: usize, size: Size) !void {
+    try self.mapInner(null, virt, len, size, undefined);
+}
+
+inline fn mapInner(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
     const size_bytes = size.bytes();
     const page_mask = size_bytes - 1;
 
@@ -62,13 +71,5 @@ pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags
     const len_real = (offset + len + size_bytes) & ~page_mask;
     const end = virt_page + len_real - 1;
 
-    const level = limine.pagingLevels();
-    const f = flags.getFlags(true);
-
-    try paging.mapRecursive(self.top, &self.pool, level, virt_page, end, phys_page, size, f);
-}
-
-/// Unmap a section of virtual memory.
-pub inline fn unmap(self: *Self, virt: usize, len: usize, size: Size) !void {
-    try self.map(null, virt, len, size, undefined);
+    try paging.mapRecursive(self.top, &self.pool, limine.paging_levels, virt_page, end, phys_page, size, flags);
 }

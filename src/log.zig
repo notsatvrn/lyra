@@ -13,17 +13,16 @@ var lock = Lock{};
 
 // BASIC PRINTING / WRITER
 
-fn write(_: void, bytes: []const u8) error{}!usize {
+fn write(_: *const anyopaque, bytes: []const u8) error{}!usize {
     tty.print(bytes);
     return bytes.len;
 }
 
-const Writer = std.io.Writer(void, error{}, write);
-var writer: Writer = .{ .context = void{} };
+var writer = std.Io.AnyWriter{ .context = undefined, .writeFn = &write };
 
 inline fn timeAndReset() void {
     const sec = @as(f64, @floatFromInt(nanoSinceBoot())) / std.time.ns_per_s;
-    writer.print("{s}[{d: >12.6}] ", .{ Ansi.reset, sec }) catch unreachable;
+    writer.print("{f}[{d: >12.6}] ", .{ Ansi.reset, sec }) catch unreachable;
 }
 
 // printf unprefixed
@@ -68,7 +67,7 @@ pub const Logger = struct {
             else => {},
         }
 
-        printfu("[{s}{s}{s}] {s}: ", .{ Ansi.setColor(.foreground, .{ .basic = color }), str, Ansi.reset, self.name });
+        printfu("[{f}{s}{f}] {s}: ", .{ Ansi.setColor(.foreground, .{ .basic = color }), str, Ansi.reset, self.name });
 
         // print message
 

@@ -8,7 +8,7 @@ const c = @cImport(@cInclude("uacpi/uacpi.h"));
 
 const limine = @import("limine.zig");
 
-export fn uacpi_kernel_get_rsdp(rsdp: *c.uacpi_phys_addr) callconv(.C) c.uacpi_status {
+export fn uacpi_kernel_get_rsdp(rsdp: *c.uacpi_phys_addr) callconv(.c) c.uacpi_status {
     rsdp.* = @intFromPtr(limine.rsdp.response.ptr);
     return c.UACPI_STATUS_OK;
 }
@@ -20,7 +20,7 @@ const Entry = vmm.ManagedPageTable.Entry;
 
 const map_flags = Entry{ .writable = true };
 
-export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.C) ?*anyopaque {
+export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.c) ?*anyopaque {
     vmm.kernel.page_table_lock.lock();
     defer vmm.kernel.page_table_lock.unlock();
     const virt = vmm.kernel.mmio_start;
@@ -30,7 +30,7 @@ export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(
     vmm.kernel.page_table.store();
     return @ptrFromInt(virt);
 }
-export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) void {
+export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.c) void {
     vmm.kernel.page_table_lock.lock();
     defer vmm.kernel.page_table_lock.unlock();
     vmm.kernel.page_table.unmap(@intFromPtr(virt), len, .small) catch
@@ -41,7 +41,7 @@ export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.C) 
 export fn uacpi_kernel_log(
     level: c.uacpi_log_level,
     str: [*c]const u8,
-) callconv(.C) void {
+) callconv(.c) void {
     const slice = std.mem.span(str);
     // remove the new line at the end
     const msg = slice[0 .. slice.len - 1];
@@ -76,22 +76,22 @@ export fn uacpi_kernel_log(
 // TODO: uacpi_kernel_io_write16
 // TODO: uacpi_kernel_io_write32
 
-export fn uacpi_kernel_alloc(size: c.uacpi_size) callconv(.C) ?*anyopaque {
+export fn uacpi_kernel_alloc(size: c.uacpi_size) callconv(.c) ?*anyopaque {
     const mem = memory.allocator.alloc(u8, @as(usize, size)) catch
         logger.panic("uacpi_kernel_alloc failed", .{});
     return @ptrCast(mem);
 }
-export fn uacpi_kernel_free(mem: ?*anyopaque, size: c.uacpi_size) callconv(.C) void {
+export fn uacpi_kernel_free(mem: ?*anyopaque, size: c.uacpi_size) callconv(.c) void {
     const bytes: [*]u8 = @ptrCast(mem);
     memory.allocator.free(bytes[0..size]);
 }
 
 const clock = @import("clock.zig");
 
-export fn uacpi_kernel_get_nanoseconds_since_boot() callconv(.C) u64 {
+export fn uacpi_kernel_get_nanoseconds_since_boot() callconv(.c) u64 {
     return clock.nanoSinceBoot();
 }
-export fn uacpi_kernel_stall(usec: c.uacpi_u8) callconv(.C) void {
+export fn uacpi_kernel_stall(usec: c.uacpi_u8) callconv(.c) void {
     clock.stall(@as(usize, usec) * std.time.ns_per_us);
 }
 
@@ -101,12 +101,12 @@ export fn uacpi_kernel_stall(usec: c.uacpi_u8) callconv(.C) void {
 const SpinLock = @import("utils").lock.SpinLock;
 var lock_pool = std.heap.MemoryPool(SpinLock).init(memory.allocator);
 
-export fn uacpi_kernel_create_spinlock() callconv(.C) c.uacpi_handle {
+export fn uacpi_kernel_create_spinlock() callconv(.c) c.uacpi_handle {
     const lock = lock_pool.create() catch
         logger.panic("uacpi_kernel_create_spinlock failed", .{});
     return @ptrCast(lock);
 }
-export fn uacpi_kernel_free_spinlock(lock: c.uacpi_handle) callconv(.C) void {
+export fn uacpi_kernel_free_spinlock(lock: c.uacpi_handle) callconv(.c) void {
     lock_pool.destroy(@ptrCast(@alignCast(lock)));
 }
 // TODO: uacpi_kernel_lock_spinlock

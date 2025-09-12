@@ -20,6 +20,7 @@ var tty_init_tm: tty.TextMode = undefined;
 export fn _start() callconv(.c) noreturn {
     arch.util.disableInterrupts();
     arch.boot.init();
+    limine.parse();
 
     // setup logging
 
@@ -48,6 +49,12 @@ export fn _start() callconv(.c) noreturn {
     }
 
     tty.clear();
+
+    logger.info("bootloader was {s} {s}", .{
+        limine.bootldr.response.name,
+        limine.bootldr.response.version,
+    });
+
     arch.boot.setup();
     memory.pmm.init();
     memory.vmm.kernel.page_table.load();

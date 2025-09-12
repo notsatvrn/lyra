@@ -201,8 +201,7 @@ pub inline fn load(tss: usize) void {
         :
         : [kernel_code] "i" (SegmentSelector.kernel_code),
           [null_desc] "i" (SegmentSelector.null_desc),
-        : "rax", "memory"
-    );
+        : .{ .rax = true, .memory = true });
 
     // Set the Task Register.
     const start = @intFromEnum(SegmentSelector.tss);

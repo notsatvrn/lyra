@@ -26,34 +26,6 @@ inline fn integerify(comptime str: []const u8) u96 {
     return @bitCast(@as(*const [12]u8, @ptrCast(str)).*);
 }
 
-// https://wiki.osdev.org/CPUID#CPU_Vendor_ID_String
-// https://en.wikipedia.org/wiki/CPUID#EAX=0:_Highest_Function_Parameter_and_Manufacturer_ID
-inline fn parseVendor(int: u96) Vendor {
-    return switch (int) {
-        integerify("GenuineIntel") => .intel,
-        integerify("GenuineIotel") => .intel, // rare
-        integerify("AuthenticAMD") => .amd,
-
-        integerify("VIA VIA VIA ") => .via,
-        integerify("CentaurHauls") => .centaur,
-        integerify("  Shanghai  ") => .zhaoxin,
-
-        integerify("TCGTCGTCGTCG") => .tcg,
-        integerify(" KVMKVMKVM  ") => .kvm,
-        integerify("XenVMMXenVMM") => .xen,
-        integerify("Microsoft Hv") => .hyper_v,
-        integerify("VBoxVBoxVBox") => .virtualbox,
-        integerify(" prl hyperv ") => .parallels,
-        // rare endianness mismatch bug in parallels
-        integerify(" lrpepyh vr ") => .parallels,
-        integerify("VMwareVMware") => .vmware,
-        integerify(" QNXQVMBSQG ") => .qnx,
-        integerify("bhyve bhvye ") => .bhyve,
-
-        else => .other,
-    };
-}
-
 // FEATURES
 
 pub const Features = struct {
@@ -91,12 +63,36 @@ pub fn identify() void {
               [_] "={ecx}" (ecx),
               [_] "={ebx}" (ebx),
             : [_] "{eax}" (0),
-            : "eax"
-        );
+            : .{ .eax = true });
         const value = @as(u96, ecx) << 64 |
             @as(u96, edx) << 32 |
             @as(u96, ebx);
-        break :blk parseVendor(value);
+
+        // https://wiki.osdev.org/CPUID#CPU_Vendor_ID_String
+        // https://en.wikipedia.org/wiki/CPUID#EAX=0:_Highest_Function_Parameter_and_Manufacturer_ID
+        break :blk switch (value) {
+            integerify("GenuineIntel") => .intel,
+            integerify("GenuineIotel") => .intel, // rare
+            integerify("AuthenticAMD") => .amd,
+
+            integerify("VIA VIA VIA ") => .via,
+            integerify("CentaurHauls") => .centaur,
+            integerify("  Shanghai  ") => .zhaoxin,
+
+            integerify("TCGTCGTCGTCG") => .tcg,
+            integerify(" KVMKVMKVM  ") => .kvm,
+            integerify("XenVMMXenVMM") => .xen,
+            integerify("Microsoft Hv") => .hyper_v,
+            integerify("VBoxVBoxVBox") => .virtualbox,
+            integerify(" prl hyperv ") => .parallels,
+            // rare endianness mismatch bug in parallels
+            integerify(" lrpepyh vr ") => .parallels,
+            integerify("VMwareVMware") => .vmware,
+            integerify(" QNXQVMBSQG ") => .qnx,
+            integerify("bhyve bhvye ") => .bhyve,
+
+            else => .other,
+        };
     };
 
     // features we can check with Limine
@@ -111,8 +107,7 @@ pub fn identify() void {
             : [_] "={ecx}" (ecx),
               [_] "={edx}" (edx),
             : [_] "{eax}" (1),
-            : "eax", "ebx"
-        );
+            : .{ .eax = true, .ebx = true });
         // zig fmt: off
         features.sse3 =         ecx & 1 == 1;
         features.ssse3 =        (ecx >> 9) & 1 == 1;
@@ -135,8 +130,7 @@ pub fn identify() void {
         asm volatile ("cpuid"
             : [_] "={edx}" (edx),
             : [_] "{eax}" (0x8000_0007),
-            : "eax", "ebx", "ecx"
-        );
+            : .{ .eax = true, .ebx = true, .ecx = true });
         features.invariant_tsc = (edx >> 8) & 1 == 1;
     }
 
@@ -151,7 +145,7 @@ pub fn identify() void {
             \\mov %cr4, %rax
             \\or $(3 << 9), %ax
             \\mov %rax, %cr4
-            ::: "rax");
+            ::: .{ .rax = true });
 
         if (!features.xsave) break :sse;
         // enable XSAVE; required for AVX
@@ -160,7 +154,7 @@ pub fn identify() void {
             \\mov %cr4, %rax
             \\or $(1 << 18), %eax
             \\mov %rax, %cr4
-            ::: "rax");
+            ::: .{ .rax = true });
 
         if (!features.avx) break :sse;
         // enable AVX; requires XSAVE
@@ -170,6 +164,6 @@ pub fn identify() void {
             \\xgetbv
             \\or $7, %eax
             \\xsetbv
-            ::: "rax", "rcx", "rdx");
+            ::: .{ .rax = true, .rcx = true, .rdx = true });
     }
 }

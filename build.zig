@@ -29,30 +29,30 @@ pub fn build(b: *std.Build) void {
 
     const target = b.resolveTargetQuery(.{
         .cpu_arch = arch,
-        .os_tag = .freestanding,
-        .abi = .none,
+        .cpu_model = .baseline,
         .cpu_features_add = features[0],
         .cpu_features_sub = features[1],
+        .os_tag = .freestanding,
+        .abi = .none,
+        .ofmt = .elf,
     });
 
-    // Options for the kernel executable.
-    var exe_options = std.Build.ExecutableOptions{
-        .name = "lyra",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = b.standardOptimizeOption(.{}),
-        .strip = true,
-        .linkage = .static, // Disable dynamic linking.
-        .pic = false, // Disable position independent code.
-        .omit_frame_pointer = false, // Needed for stack traces.
-    };
-
-    if (arch == .x86_64) exe_options.code_model = .kernel; // Higher half kernel.
-
     // Create the kernel executable.
-    const kernel = b.addExecutable(exe_options);
+    const kernel = b.addExecutable(.{
+        .name = "lyra",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = b.standardOptimizeOption(.{}),
+            .strip = true,
+        }),
+        .linkage = .static,
+        .use_lld = true,
+        .use_llvm = true,
+    });
 
     // Disable features that are problematic in kernel space.
+    kernel.root_module.pic = false;
     kernel.root_module.red_zone = false;
     kernel.root_module.stack_check = false;
     kernel.root_module.stack_protector = false;
@@ -63,6 +63,10 @@ pub fn build(b: *std.Build) void {
     kernel.link_gc_sections = true;
     // Force the page size to 4 KiB to prevent binary bloat.
     kernel.link_z_max_page_size = 0x1000;
+    // Frame pointer is needed for stack traces.
+    kernel.root_module.omit_frame_pointer = false;
+    // Code model for a higher half kernel.
+    if (arch == .x86_64) kernel.root_module.code_model = .kernel;
 
     switch (arch) {
         .x86_64 => {

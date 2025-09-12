@@ -31,7 +31,7 @@ pub inline fn print() void {
     while (iterator.next() catch
         logger.panic("device printing failed (OOM)", .{})) |device|
     {
-        logger.debug("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {s}", .{
+        logger.debug("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {f}", .{
             device.key.bus,
             device.key.slot,
             device.key.func,
@@ -227,12 +227,7 @@ pub const Class = union(PrimaryClass) {
         };
     }
 
-    pub fn format(
-        self: Self,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
+    pub fn format(self: Self, writer: *std.Io.Writer) !void {
         const tag = @as(PrimaryClass, self);
         switch (tag) {
             inline else => |t| {
@@ -242,7 +237,7 @@ pub const Class = union(PrimaryClass) {
                 if (FieldType == void) return writer.writeAll(comptime t.name());
 
                 const field_value = @field(self, tag_name);
-                return field_value.format(fmt, options, writer);
+                return field_value.format(writer);
             },
         }
     }
@@ -254,15 +249,7 @@ pub const Unclassified = enum {
     non_vga_compat,
     vga_compat,
 
-    pub fn format(
-        self: Unclassified,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Unclassified, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .non_vga_compat => "Non-VGA-Compatible Unclassified Device",
             .vga_compat => "VGA-Compatible Unclassified Device",
@@ -346,15 +333,7 @@ pub const MassStorageController = union(enum) {
         };
     }
 
-    pub fn format(
-        self: MassStorageController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: MassStorageController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .scsi_bus_controller => "SCSI Bus Controller",
             .ide_controller => "IDE Controller",
@@ -436,15 +415,7 @@ pub const NetworkController = enum {
     fabric_controller,
     other,
 
-    pub fn format(
-        self: NetworkController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: NetworkController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .ethernet_controller => "Ethernet Controller",
             .token_ring_controller => "Token Ring Controller",
@@ -488,15 +459,7 @@ pub const DisplayController = union(enum) {
         };
     }
 
-    pub fn format(
-        self: Self,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Self, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .vga_compatible => |v| switch (v.typ) {
                 .vga => "VGA Controller",
@@ -520,15 +483,7 @@ pub const MultimediaController = enum {
     audio_device,
     other,
 
-    pub fn format(
-        self: MultimediaController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: MultimediaController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .multimedia_video_controller => "Multimedia Video Controller",
             .multimedia_audio_controller => "Multimedia Audio Controller",
@@ -548,15 +503,7 @@ pub const MemoryController = enum {
     flash_controller,
     other,
 
-    pub fn format(
-        self: MemoryController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: MemoryController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .ram_controller => "RAM Controller",
             .flash_controller => "Flash Controller",
@@ -619,15 +566,7 @@ pub const Bridge = union(enum) {
         };
     }
 
-    pub fn format(
-        self: Bridge,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Bridge, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .host => "Host",
             .isa => "ISA",
@@ -746,15 +685,7 @@ pub const SimpleCommunicationController = union(enum) {
         };
     }
 
-    pub fn format(
-        self: SimpleCommunicationController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: SimpleCommunicationController, writer: *std.Io.Writer) !void {
         switch (self) {
             .serial => |serial| try writer.print("{s}-Compatible Serial Controller", .{@tagName(serial.interface)[1..]}),
             .parallel => |parallel| {
@@ -843,15 +774,7 @@ pub const BaseSystemPeripheral = union(enum) {
         };
     }
 
-    pub fn format(
-        self: BaseSystemPeripheral,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: BaseSystemPeripheral, writer: *std.Io.Writer) !void {
         switch (self) {
             .pic => |pic| {
                 const name = switch (pic.type) {
@@ -930,15 +853,7 @@ pub const InputDeviceController = union(enum) {
         };
     }
 
-    pub fn format(
-        self: InputDeviceController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: InputDeviceController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .keyboard_controller => "Keyboard Controller",
             .digitizer_pen => "Digitizer Pen",
@@ -966,15 +881,7 @@ pub const DockingStation = enum {
     generic,
     other,
 
-    pub fn format(
-        self: DockingStation,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: DockingStation, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .generic => "Generic Docking Station",
             .other => "Other Docking Station",
@@ -997,15 +904,7 @@ pub const Processor = enum {
     co_processor,
     other,
 
-    pub fn format(
-        self: Processor,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Processor, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             ._386 => "386 Processor",
             ._486 => "486 Processor",
@@ -1088,15 +987,7 @@ pub const SerialBusController = union(enum) {
         };
     }
 
-    pub fn format(
-        self: SerialBusController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: SerialBusController, writer: *std.Io.Writer) !void {
         if (self == .firewire) {
             const interface = switch (self.firewire.interface) {
                 .generic => "Generic",
@@ -1160,15 +1051,7 @@ pub const WirelessController = enum {
     ethernet_b_controller,
     other,
 
-    pub fn format(
-        self: WirelessController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: WirelessController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .irda_compatible_controller => "iRDA Compatible Controller",
             .consumer_ir_controller => "Consumer IR Controller",
@@ -1189,15 +1072,7 @@ pub const WirelessController = enum {
 pub const IntelligentController = enum {
     i20,
 
-    pub fn format(
-        self: IntelligentController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: IntelligentController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .i20 => "I20 Intelligent Controller",
         };
@@ -1214,15 +1089,7 @@ pub const SatelliteCommunicationController = enum {
     voice_controller,
     data_controller,
 
-    pub fn format(
-        self: SatelliteCommunicationController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: SatelliteCommunicationController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .tv_controller => "Satellite TV Controller",
             .audio_controller => "Satellite Audio Controller",
@@ -1241,15 +1108,7 @@ pub const EncryptionController = enum {
     entertainment,
     other,
 
-    pub fn format(
-        self: EncryptionController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: EncryptionController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .network_and_computing => "Network and Computing Encryption / Decryption Controller",
             .entertainment => "Entertainment Encryption / Decryption Controller",
@@ -1269,15 +1128,7 @@ pub const SignalProcessingController = enum {
     signal_processing_management,
     other,
 
-    pub fn format(
-        self: SignalProcessingController,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: SignalProcessingController, writer: *std.Io.Writer) !void {
         const name = switch (self) {
             .dpio_modules => "DPIO Modules",
             .performance_counters => "Performance Counters",
