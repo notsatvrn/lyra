@@ -9,8 +9,8 @@
             .lazy = true,
         },
         .utils = .{
-            .url = "git+https://github.com/notsatvrn/zig-utils#9a65f0a38f530c226d1ce78d4b3f7dc556bb9d1c",
-            .hash = "utils-0.0.0-mXwaHm-aAACpcn-OlC3YRlK95gqrkL1tpftEVZBODAOT",
+            .url = "git+https://github.com/notsatvrn/zig-utils#4ea26b7db90930e83c308d9327197f2dd935da62",
+            .hash = "utils-0.0.0-mXwaHrmaAAD2ydWvRAaMUtq84oVyhZFkCkUH7PTFw-Tm",
         },
     },
     .paths = .{

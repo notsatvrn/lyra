@@ -6,13 +6,13 @@ const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const cpuid = @import("cpuid.zig");
 const memory = @import("memory.zig");
-const smp = @import("smp.zig");
 const clock = @import("clock.zig");
-const pci = @import("pci.zig");
 const acpi = @import("acpi.zig");
+const smp = @import("smp.zig");
+const pci = @import("pci.zig");
 
-const gfx = @import("gfx.zig");
 const tty = @import("tty.zig");
+const gfx = @import("gfx.zig");
 const log = @import("log.zig");
 const logger = log.Logger{ .name = "main" };
 
@@ -63,29 +63,24 @@ export fn stage1() noreturn {
     memory.ready = true;
 
     if (framebuffers.count > 0) fbsetup: {
-        // set current framebuffer to mirror a virtual framebuffer (double-buffering)
-
         const smallest = tty.output.fb;
-        const s_buffer = smallest.buffer;
 
-        var mode = s_buffer.mode.*;
-        mode.pitch = mode.width * s_buffer.bytes;
-        var new_fb = tty.Framebuffer.initVirtual(&mode) catch break :fbsetup;
+        var mode = smallest.buffer.mode.*;
+        // virtual framebuffer, don't use monitor pitch
+        mode.pitch = mode.width * smallest.buffer.bytes;
+        var fb = tty.Framebuffer.initVirtual(&mode) catch break :fbsetup;
 
-        new_fb.cursor = smallest.cursor;
-        new_fb.initMirroring(s_buffer) catch break :fbsetup;
+        fb.cursor = smallest.cursor;
+        fb.buffer.copy(&smallest.buffer, null);
 
-        defer tty.output.fb = new_fb;
-
-        // add additional mirrors
-
-        if (framebuffers.count == 1) break :fbsetup;
         for (0..framebuffers.count) |i| {
-            const new = framebuffers.entries[i];
-            const new_mode = new.defaultVideoMode();
-            const new_buffer = gfx.Framebuffer.init(new.ptr, &new_mode);
-            new_fb.addMirror(new_buffer) catch break;
+            const mirror = framebuffers.entries[i];
+            const mirror_mode = mirror.defaultVideoMode();
+            const mirror_fb = gfx.Framebuffer.init(mirror.ptr, &mirror_mode);
+            fb.addOutput(mirror_fb) catch break;
         }
+
+        tty.output.fb = fb;
     }
 
     int.remapPIC(32, 40);

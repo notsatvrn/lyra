@@ -5,7 +5,7 @@ const std = @import("std");
 
 const gfx = @import("../gfx.zig");
 const Framebuffer = gfx.Framebuffer;
-const Aabb = gfx.Aabb;
+const Rect = gfx.Rect;
 
 const tty = @import("../tty.zig");
 const RenderState = tty.RenderState;
@@ -51,10 +51,8 @@ const Cursor = struct {
 };
 
 const Virtual = struct {
-    // mirrored consoles
-    mirrors: std.ArrayList(Framebuffer) = .{},
-    // damage tracking
-    damage: ?Aabb = null,
+    outputs: std.ArrayList(Framebuffer) = .{},
+    damage: Rect = .{},
 };
 
 const Self = @This();
@@ -99,11 +97,18 @@ inline fn writeCharRow(self: *Self, pos: usize, data: u8, fg: u64, bg: u64, comp
 inline fn writeChar(self: *Self, c: u8) void {
     const pitch = self.buffer.mode.pitch;
 
-    var offset = self.cursor.row * pitch * 16;
-    offset += self.cursor.col * self.buffer.bytes * 8;
+    const x = self.cursor.col * 8;
+    const y = self.cursor.row * 16;
+
+    var offset = (x * self.buffer.bytes) + (y * pitch);
     self.cursor.col += 1;
 
     if (self.cursor.col - 1 > self.info.cols) return;
+
+    if (self.virtual) |virtual| virtual.damage.add(.{
+        .corner = .{ x, y },
+        .dimensions = .{ 8, 16 },
+    });
 
     const bg = self.getPixel(.background);
 
@@ -198,95 +203,38 @@ inline fn scroll(self: *Self) void {
     @memset(self.buffer.buf[top_end..], 0);
     // Move the cursor up a line.
     self.cursor.row -= 1;
+    // Damage the whole screen.
+    self.damageFull();
 }
 
 pub inline fn clear(self: *Self) void {
     self.buffer.clear();
     self.cursor.row = 0;
     self.cursor.col = 0;
+    self.damageFull();
 }
 
 // MIRRORING
 
-pub fn sync(self: *Self) void {
+inline fn damageFull(self: *Self) void {
+    if (self.virtual) |virtual| virtual.damage = .{
+        .corner = .{ 0, 0 },
+        .dimensions = .{
+            self.info.cols * 16,
+            self.info.rows * 8,
+        },
+    };
+}
+
+pub inline fn sync(self: *Self) void {
     const virtual = self.virtual orelse return;
-    // TODO: implement damage tracking
-    //if (virtual.damage == null) return;
-
-    const src = &self.buffer;
-
-    for (virtual.mirrors.items) |*dst| {
-        const height = @min(src.mode.height, dst.mode.height);
-        const width = @min(src.mode.width, dst.mode.width);
-
-        var dst_offset: usize = 0;
-        var src_offset: usize = 0;
-
-        if (src.sameEncoding(dst)) {
-            // fast path for same encoder
-
-            const end = src.bytes * width;
-
-            for (0..height) |_| {
-                @memcpy(
-                    dst.buf[dst_offset .. dst_offset + end],
-                    src.buf[src_offset .. src_offset + end],
-                );
-
-                dst_offset += dst.mode.pitch;
-                src_offset += src.mode.pitch;
-            }
-        } else {
-            // decode and encode again
-
-            const dst_diff = dst.mode.pitch - (dst.bytes * width);
-            const src_diff = src.mode.pitch - (src.bytes * width);
-
-            for (0..height) |_| {
-                for (0..width) |_| {
-                    dst.writeColor(dst_offset, src.readColor(src_offset));
-
-                    dst_offset += dst.bytes;
-                    src_offset += src.bytes;
-                }
-
-                dst_offset += dst_diff;
-                src_offset += src_diff;
-            }
-        }
-    }
-
-    virtual.damage = null;
+    if (virtual.damage.isClear()) return;
+    for (virtual.outputs.items) |*dst|
+        dst.copy(&self.buffer, virtual.damage);
+    virtual.damage = .{};
 }
 
-pub fn initMirroring(self: *Self, old_buf: Framebuffer) !void {
-    try self.addMirror(old_buf);
-
-    // initial copy
-
-    const src = old_buf;
-    const dst = self.buffer;
-
-    std.debug.assert(src.mode.height == dst.mode.height);
-    std.debug.assert(src.mode.width == dst.mode.width);
-
-    var dst_offset: usize = 0;
-    var src_offset: usize = 0;
-
-    const end = src.bytes * src.mode.width;
-
-    for (0..src.mode.height) |_| {
-        @memcpy(
-            dst.buf[dst_offset .. dst_offset + end],
-            src.buf[src_offset .. src_offset + end],
-        );
-
-        dst_offset += dst.mode.pitch;
-        src_offset += src.mode.pitch;
-    }
-}
-
-pub inline fn addMirror(self: *Self, buffer: Framebuffer) !void {
+pub inline fn addOutput(self: *Self, buffer: Framebuffer) !void {
     if (self.virtual == null) return error.NotVirtual;
-    try self.virtual.?.mirrors.append(memory.allocator, buffer);
+    try self.virtual.?.outputs.append(memory.allocator, buffer);
 }

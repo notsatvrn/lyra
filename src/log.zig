@@ -20,31 +20,32 @@ const buf_writer = buffer.writer(memory.allocator);
 
 // BASIC PRINTING / WRITER
 
-fn write(_: *const anyopaque, bytes: []const u8) error{}!usize {
+const WriteError = std.mem.Allocator.Error;
+
+fn write(_: void, bytes: []const u8) WriteError!usize {
     tty.print(bytes);
-    if (memory.ready)
-        buf_writer.writeAll(bytes) catch
-            @panic("OOM in log");
+    if (memory.ready) try buf_writer.writeAll(bytes);
     return bytes.len;
 }
 
-var writer = std.Io.AnyWriter{ .context = undefined, .writeFn = &write };
+const writer = std.Io.GenericWriter(void, WriteError, write){ .context = void{} };
 
-inline fn timeAndReset() void {
+fn printRaw(comptime fmt: []const u8, args: anytype) !void {
     const sec = @as(f64, @floatFromInt(nanoSinceBoot())) / std.time.ns_per_s;
-    writer.print("{f}[{d: >12.6}] ", .{ Ansi.reset, sec }) catch unreachable;
+    try writer.print("{f}[{d: >12.6}] " ++ fmt, .{ Ansi.reset, sec } ++ args);
 }
 
-// printf unprefixed
-inline fn printfu(comptime fmt: []const u8, args: anytype) void {
-    writer.print(fmt, args) catch unreachable;
-}
-
-pub inline fn printf(comptime fmt: []const u8, args: anytype) void {
+pub fn print(comptime fmt: []const u8, args: anytype) void {
     lock.lock();
-    timeAndReset();
-    printfu(fmt, args);
-    lock.unlock();
+    defer lock.unlock();
+    printRaw(fmt, args) catch {
+        // clear the log buffer
+        buffer.clearAndFree(memory.allocator);
+        // at this point it should be able to write
+        printRaw(fmt, args) catch
+            @panic("unable to write to log buffer");
+    };
+    tty.sync();
 }
 
 // BASIC LOGGING
@@ -53,11 +54,6 @@ pub const Logger = struct {
     name: []const u8,
 
     inline fn log(self: Logger, comptime level: Level, comptime fmt: []const u8, args: anytype) void {
-        lock.lock();
-        timeAndReset();
-
-        // print [<level>] with color
-
         var color: colors.Basic = .green;
         var str: []const u8 = "INFO ";
 
@@ -77,17 +73,11 @@ pub const Logger = struct {
             else => {},
         }
 
-        printfu("[{f}{s}{f}] {s}: ", .{ Ansi.setColor(.foreground, .{ .basic = color }), str, Ansi.reset, self.name });
-
-        // print message
-
-        printfu(fmt ++ "\n", args);
-        tty.sync();
-        lock.unlock();
+        const ansi_color = Ansi.setColor(.foreground, .{ .basic = color });
+        print("[{f}{s}{f}] {s}: " ++ fmt ++ "\n", .{ ansi_color, str, Ansi.reset, self.name } ++ args);
     }
 
-    pub fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
-        @branchHint(.cold);
+    pub inline fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
         std.debug.panic("{s}: " ++ fmt, .{self.name} ++ args);
     }
 
@@ -110,12 +100,20 @@ pub const Logger = struct {
 
 // PANIC
 
-pub inline fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: anytype) noreturn {
+pub fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: anytype) noreturn {
     @branchHint(.cold);
-    _ = first_trace_addr;
     lock.lock();
-    timeAndReset();
-    writer.print("[PANIC] " ++ fmt ++ "\n", args) catch unreachable;
+    memory.ready = false; // stop allocating log buffer
+    printRaw("[PANIC] " ++ fmt ++ "\n", args) catch unreachable;
+    printRaw("call trace:\n", .{}) catch unreachable;
+
+    var it = std.debug.StackIterator.init(first_trace_addr, null);
+    while (it.next()) |return_address| {
+        const address = return_address -| 1;
+        if (address == 0) break;
+        printRaw("- 0x{x:0>16}\n", .{address}) catch unreachable;
+    }
+
     tty.sync();
     halt();
 }

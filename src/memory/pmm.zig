@@ -162,7 +162,10 @@ pub inline fn init() usize {
     }
 
     logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
-    return end | limine.hhdm.response.offset;
+    // let's make out-of-memory scenarios impossible for early boot stuff
+    if (total < 4096) logger.panic("less than 16MiB memory available!", .{});
+    // make sure we're out of the 32-bit address space (crashes otherwise)
+    return @max(end, 4 * memory.GB) | limine.hhdm.response.offset;
 }
 
 // REGION UTILITIES

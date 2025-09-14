@@ -63,20 +63,6 @@ pub fn init(ptr: [*]u8, mode: *const VideoMode) Self {
     };
 }
 
-// MISC UTILITIES
-
-pub fn sameEncoding(self: Self, other: *const Self) bool {
-    if (self.bytes != other.bytes) return false;
-
-    inline for (std.meta.fields(Encoding)) |field| {
-        const self_field: @FieldType(Encoding, field.name) = @field(self.encoding, field.name);
-        const other_field: @FieldType(Encoding, field.name) = @field(other.encoding, field.name);
-        if (self_field != other_field) return false;
-    }
-
-    return true;
-}
-
 // WRITING PIXELS
 
 pub fn makePixel(self: Self, color: Rgb.Bpp36) u64 {
@@ -175,4 +161,47 @@ pub fn readColor(self: Self, pos: usize) Rgb.Bpp36 {
         .g = @truncate(g),
         .b = @truncate(b),
     };
+}
+
+// COPYING
+
+const Rect = @import("../gfx.zig").Rect;
+
+pub fn copy(dst: *Self, src: *const Self, bounds: ?Rect) void {
+    const width = if (bounds) |b| b.dimensions[0] else @min(src.mode.width, dst.mode.width);
+    const height = if (bounds) |b| b.dimensions[1] else @min(src.mode.height, dst.mode.height);
+
+    var dst_offset: usize = 0;
+    var src_offset: usize = 0;
+    if (bounds) |b| { // move offsets to the bounds corner
+        dst_offset += (b.corner[0] * dst.bytes) + (b.corner[1] * dst.mode.pitch);
+        src_offset += (b.corner[0] * src.bytes) + (b.corner[1] * src.mode.pitch);
+    }
+
+    if (std.meta.eql(dst.encoding, src.encoding)) {
+        const end = src.bytes * width;
+
+        for (0..height) |_| {
+            // same encoding, copy the whole row
+            const dst_buf = dst.buf[dst_offset .. dst_offset + end];
+            const src_buf = src.buf[src_offset .. src_offset + end];
+            @memcpy(dst_buf, src_buf);
+            dst_offset += dst.mode.pitch;
+            src_offset += src.mode.pitch;
+        }
+    } else {
+        const dst_diff = dst.mode.pitch - (dst.bytes * width);
+        const src_diff = src.mode.pitch - (src.bytes * width);
+
+        for (0..height) |_| {
+            // re-encode the row
+            for (0..width) |_| {
+                dst.writeColor(dst_offset, src.readColor(src_offset));
+                dst_offset += dst.bytes;
+                src_offset += src.bytes;
+            }
+            dst_offset += dst_diff;
+            src_offset += src_diff;
+        }
+    }
 }

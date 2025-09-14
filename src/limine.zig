@@ -52,8 +52,6 @@ pub const FramebufferResponse = extern struct {
     entries: [*]const *const Framebuffer,
 };
 
-const Color = @import("tty.zig").Color;
-
 pub const Framebuffer = extern struct {
     ptr: [*]u8,
     width: u64,
@@ -180,16 +178,6 @@ pub const SmbiosResponse = extern struct {
     entry_64: *const void,
 };
 
-// DEVICE TREE BLOB
-
-pub export var dtb linksection(".requests") =
-    Request(.{ 0xb40ddb48fb54bac7, 0x545081493f81ffb7 }, ?DeviceTreeResponse){};
-
-pub const DeviceTreeResponse = extern struct {
-    revision: u64,
-    pointer: ?*const void,
-};
-
 // EFI SYSTEM TABLE
 
 pub export var efi_system_table linksection(".requests") =
@@ -273,6 +261,17 @@ pub const KernelAddressResponse = extern struct {
     virtual: u64,
 };
 
+// MODULES
+
+pub export var modules linksection(".requests") =
+    Request(.{ 0x3e7e279702be32af, 0xca1c4f3bd1280cee }, ModulesResponse){};
+
+pub const ModulesResponse = extern struct {
+    revision: u64,
+    module_count: u64,
+    modules: [*]const *const File,
+};
+
 // RSDP
 
 const Rsdp = @import("acpi.zig").Rsdp;
@@ -285,7 +284,7 @@ pub const RsdpResponse = extern struct {
     ptr: *Rsdp,
 };
 
-// MULTI-PROCESSOR INFO
+// MULTI-PROCESSOR INFORMATION
 
 pub export var cpus linksection(".requests") = CpusRequest{};
 

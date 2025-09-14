@@ -23,9 +23,8 @@ pub inline fn print() void {
     var iterator = devices.iterator(memory.allocator);
     logger.debug("devices:", .{});
 
-    while (iterator.next() catch
-        logger.panic("device printing failed (OOM)", .{})) |device|
-    {
+    // 16MiB minimum memory requirement, should never OOM
+    while (iterator.next() catch unreachable) |device| {
         logger.debug("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {f}", .{
             device.key.bus,
             device.key.slot,
@@ -72,10 +71,11 @@ fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
 }
 
 pub inline fn detect() void {
-    detectBus(0) catch |e| logger.panic("device detection failed: {}", .{e});
+    // 16MiB minimum memory requirement, should never OOM
+    detectBus(0) catch unreachable;
 }
 
-fn detectBus(bus: u8) !void {
+fn detectBus(bus: u8) std.mem.Allocator.Error!void {
     slots: for (0..32) |slot| {
         for (0..8) |func| {
             const location = DeviceLocation{

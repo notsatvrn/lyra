@@ -3,7 +3,7 @@ const memory = @import("memory.zig");
 
 const logger = @import("log.zig").Logger{ .name = "smp" };
 
-// HELPER FUNCTIONS
+// INITIALIZATION
 
 const gdt = @import("gdt.zig");
 const isr = @import("int/isr.zig");
@@ -15,9 +15,9 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
     // not sure if this can happen, but if it does
     // i don't want to deal with it at the moment
     if (cpu0.id != cpus.bsp_id) logger.panic("cpu 0 id != bootstrap id", .{});
-
-    gdt.update(cpus.count) catch logger.panic("OOM while reinitializing GDT", .{});
-    isr.newStacks(cpus.count) catch logger.panic("OOM while setting up ", .{});
+    // 16MiB minimum memory requirement, should never OOM
+    gdt.update(cpus.count) catch unreachable;
+    isr.newStacks(cpus.count) catch unreachable;
 
     const wrap = struct {
         pub fn wrapped(cpu: *const limine.Cpu) callconv(.c) noreturn {
@@ -39,7 +39,7 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
     entry();
 }
 
-// CPU INFO
+// HELPER FUNCTIONS
 
 /// Use the GDT to identify the current CPU.
 pub const getCpu = gdt.str;
