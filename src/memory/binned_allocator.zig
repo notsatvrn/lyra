@@ -276,7 +276,7 @@ test "small allocations - free in same order" {
     const allocator = binned.allocator();
 
     const gpa = std.testing.allocator;
-    var list: std.ArrayListUnmanaged(*u64) = .empty;
+    var list: std.ArrayList(*u64) = .empty;
     defer list.deinit(gpa);
 
     var i: usize = 0;
@@ -296,7 +296,7 @@ test "small allocations - free in reverse order" {
     const allocator = binned.allocator();
 
     const gpa = std.testing.allocator;
-    var list: std.ArrayListUnmanaged(*u64) = .empty;
+    var list: std.ArrayList(*u64) = .empty;
     defer list.deinit(gpa);
 
     var i: usize = 0;
@@ -466,7 +466,7 @@ test "shrink large object to large object with larger alignment" {
     // This loop allocates until we find a page that is not aligned to the big
     // alignment. Then we shrink the allocation after the loop, but increase the
     // alignment to the higher one, that we know will force it to realloc.
-    var stuff_to_free: std.ArrayListUnmanaged([]align(16) u8) = .empty;
+    var stuff_to_free: std.ArrayList([]align(16) u8) = .empty;
     while (std.mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
         try stuff_to_free.append(debug_allocator, slice);
         slice = try allocator.alignedAlloc(u8, 16, alloc_size);
@@ -520,7 +520,7 @@ test "realloc large object to larger alignment" {
 
     const big_alignment: usize = 8192;
     // This loop allocates until we find a page that is not aligned to the big alignment.
-    var stuff_to_free: std.ArrayListUnmanaged([]align(16) u8) = .{};
+    var stuff_to_free: std.ArrayList([]align(16) u8) = .{};
     while (std.mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
         try stuff_to_free.append(debug_allocator, slice);
         slice = try allocator.alignedAlloc(u8, 16, 8192 + 50);

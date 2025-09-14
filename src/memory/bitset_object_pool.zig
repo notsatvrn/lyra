@@ -27,7 +27,7 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
             used_set: UsedSet,
         };
 
-        bins: std.ArrayListUnmanaged(Bin) = .{},
+        bins: std.ArrayList(Bin) = .{},
 
         const Self = @This();
 

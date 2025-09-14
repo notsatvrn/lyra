@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const io = @import("io.zig");
+const io = @import("io.zig");
 
 // BASIC UTILITIES
 

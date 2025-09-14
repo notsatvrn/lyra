@@ -19,11 +19,6 @@ fn cmpLoc(a: DeviceLocation, b: DeviceLocation) std.math.Order {
 pub const Devices = TreeMap(DeviceLocation, DeviceInfo, cmpLoc, .avl, true);
 pub var devices = Devices.init(memory.allocator);
 
-pub inline fn detect() void {
-    @import("arch.zig").pciDetect(&devices) catch |e|
-        logger.panic("device detection failed: {}", .{e});
-}
-
 pub inline fn print() void {
     var iterator = devices.iterator(memory.allocator);
     logger.debug("devices:", .{});
@@ -42,6 +37,87 @@ pub inline fn print() void {
     }
 
     iterator.deinit();
+}
+
+// CONFIGURATION SPACE (ACCESS MECHANISM #1)
+// https://osdev.wiki/wiki/PCI#Configuration_Space_Access_Mechanism_#1
+
+const io = @import("io.zig");
+
+const CONFIG_ADDRESS = 0xCF8;
+const CONFIG_DATA = 0xCFC;
+
+fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
+    const ConfigAddress = packed struct(u32) {
+        offset: u8,
+        location: DeviceLocation,
+        reserved: u7 = 0,
+        enable: bool,
+    };
+
+    const addr = ConfigAddress{
+        .offset = offset & 0xFC,
+        .location = location,
+        .enable = true,
+    };
+
+    io.out(u32, CONFIG_ADDRESS, @bitCast(addr));
+    const tmp = io.in(u32, CONFIG_DATA);
+    return switch (T) {
+        u8 => @truncate(tmp >> @truncate(8 * (offset % 4))),
+        u16 => @truncate(tmp >> @truncate(8 * (offset % 4))),
+        u32 => tmp,
+        else => @compileError("configRead type must be u8, u16, or u32"),
+    };
+}
+
+pub inline fn detect() void {
+    detectBus(0) catch |e| logger.panic("device detection failed: {}", .{e});
+}
+
+fn detectBus(bus: u8) !void {
+    slots: for (0..32) |slot| {
+        for (0..8) |func| {
+            const location = DeviceLocation{
+                .func = @truncate(func),
+                .slot = @truncate(slot),
+                .bus = bus,
+            };
+
+            const vendor = configRead(u16, location, 0);
+            // no vendors are 0xFFFF, must be empty
+            if (vendor == 0xFFFF) continue;
+
+            const device = configRead(u16, location, 2);
+
+            const primary = configRead(u8, location, 11);
+            const subclass = configRead(u8, location, 10);
+            const interface = configRead(u8, location, 9);
+            const class = Class.parse(primary, subclass, interface) orelse {
+                logger.debug(
+                    "invalid hardware found {x} {x} {x}",
+                    .{ primary, subclass, interface },
+                );
+                continue;
+            };
+
+            const desc = DeviceDescriptor{ .vendor = vendor, .device = device };
+            try devices.put(location, .{ .desc = desc, .class = class });
+
+            const header_type = configRead(u8, location, 14);
+
+            if (header_type & 0xF == 0x1) {
+                // PCI-to-PCI bridge, let's read the next bus
+                const next_bus = configRead(u8, location, 0x19);
+                try detectBus(next_bus);
+            }
+
+            if (func == 0) {
+                // if bit 7 is set, this is a multi-function device
+                if (header_type >> 7 != 1) continue :slots;
+            }
+        }
+    }
 }
 
 // CLASSIFICATION

@@ -7,14 +7,14 @@ const Color = colors.Color;
 
 pub const ColorPart = enum(u8) { foreground = 38, background = 48, underline = 58 };
 
-pub inline fn writeColorSGR(color: Color, writer: anytype, part: ColorPart) !void {
+pub inline fn writeColorSGR(color: Color, writer: *std.Io.Writer, part: ColorPart) !void {
     return print: switch (color) {
         .basic => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), @intFromEnum(v) }),
         .@"256" => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), v }),
-        .hsl => |v| continue :print .{ .rgb = colors.RGB.fromHSL(v) },
+        .hsl => |v| continue :print .{ .rgb = colors.Rgb.fromHsl(v) },
         .rgb => |v| {
             const rgb24 = v.getSize(.bpp24);
-            const params = .{@intFromEnum(part)} ++ rgb24;
+            const params = .{ @intFromEnum(part), rgb24.r, rgb24.g, rgb24.b };
             return writer.print("{d};2;{d};{d};{d}", params);
         },
     };
@@ -144,7 +144,7 @@ pub const Ansi = union(enum) {
 
         try writer.writeByte(esc);
         switch (self) {
-            .sgr => |v| try writer.print("[{s}m", .{v}),
+            .sgr => |v| try writer.print("[{f}m", .{v}),
         }
     }
 

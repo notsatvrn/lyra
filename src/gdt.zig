@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
-const memory = @import("../../memory.zig");
+const memory = @import("memory.zig");
 
 // STANDARD SEGMENT STRUCTURES
 

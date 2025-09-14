@@ -1,7 +1,10 @@
 const std = @import("std");
 
 const limine = @import("limine.zig");
-const arch = @import("arch.zig");
+const util = @import("util.zig");
+const gdt = @import("gdt.zig");
+const int = @import("int.zig");
+const cpuid = @import("cpuid.zig");
 const memory = @import("memory.zig");
 const smp = @import("smp.zig");
 const clock = @import("clock.zig");
@@ -15,23 +18,14 @@ const logger = log.Logger{ .name = "main" };
 
 // ENTRYPOINT
 
-var tty_init_tm: tty.TextMode = undefined;
-
-export fn _start() callconv(.c) noreturn {
-    arch.util.disableInterrupts();
-    arch.boot.init();
-    limine.parse();
-
-    // setup logging
+export fn stage1() noreturn {
+    util.disableInterrupts();
+    gdt.init();
+    int.idt.init();
+    int.isr.storeStack();
 
     const framebuffers = limine.fb.response;
-
-    if (framebuffers.count == 0) {
-        if (arch.text_mode) |tm| {
-            tty_init_tm = tty.TextMode.initAddr(tm.address());
-            tty.generic = tty_init_tm.generic();
-        }
-    } else {
+    if (framebuffers.count > 0) {
         // start logging to the smallest framebuffer
         // when we bring up more, they'll mirror this one
         var smallest = framebuffers.entries[0];
@@ -45,9 +39,10 @@ export fn _start() callconv(.c) noreturn {
         }
 
         const mode = smallest.defaultVideoMode();
-        tty.framebuffer = tty.Framebuffer.init(smallest.ptr, &mode);
+        const fb = tty.Framebuffer.init(smallest.ptr, &mode);
+        tty.output = .{ .fb = fb };
     }
-
+    tty.state = .init();
     tty.clear();
 
     logger.info("bootloader was {s} {s}", .{
@@ -55,28 +50,32 @@ export fn _start() callconv(.c) noreturn {
         limine.bootldr.response.version,
     });
 
-    arch.boot.setup();
-    memory.pmm.init();
-    memory.vmm.kernel.page_table.load();
-    smp.init();
-    arch.util.enableInterrupts();
-    clock.setup();
+    logger.info("identify processor...", .{});
+    cpuid.identify();
+    logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
+    if (!cpuid.features.invariant_tsc)
+        logger.panic("- invariant TSC not supported!", .{});
+    if (cpuid.features.x2apic)
+        logger.info("- x2apic is supported", .{});
 
-    if (framebuffers.count != 0) fbsetup: {
+    memory.vmm.kernel.mmio_start = memory.pmm.init();
+    memory.vmm.kernel.page_table.load();
+    memory.ready = true;
+
+    if (framebuffers.count > 0) fbsetup: {
         // set current framebuffer to mirror a virtual framebuffer (double-buffering)
 
-        const smallest = tty.framebuffer.?.basic;
+        const smallest = tty.output.fb;
         const s_buffer = smallest.buffer;
 
         var mode = s_buffer.mode.*;
         mode.pitch = mode.width * s_buffer.bytes;
         var new_fb = tty.Framebuffer.initVirtual(&mode) catch break :fbsetup;
 
-        new_fb.advanced.base.render = smallest.render;
-        new_fb.advanced.base.cursor = smallest.cursor;
-        new_fb.advanced.initMirroring(s_buffer) catch break :fbsetup;
+        new_fb.cursor = smallest.cursor;
+        new_fb.initMirroring(s_buffer) catch break :fbsetup;
 
-        defer tty.framebuffer = new_fb;
+        defer tty.output.fb = new_fb;
 
         // add additional mirrors
 
@@ -85,15 +84,27 @@ export fn _start() callconv(.c) noreturn {
             const new = framebuffers.entries[i];
             const new_mode = new.defaultVideoMode();
             const new_buffer = gfx.Framebuffer.init(new.ptr, &new_mode);
-            new_fb.advanced.addMirror(new_buffer) catch break;
+            new_fb.addMirror(new_buffer) catch break;
         }
     }
 
-    pci.detect();
-    pci.print();
+    int.remapPIC(32, 40);
+    util.enablePICInterrupts();
+    util.enableInterrupts();
+    clock.setup();
     acpi.init();
 
-    while (true) arch.util.wfi();
+    smp.init(stage2);
+}
+
+fn stage2() noreturn {
+    if (smp.getCpu() == 0) continued();
+    while (true) util.wfi();
+}
+
+fn continued() void {
+    pci.detect();
+    pci.print();
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS

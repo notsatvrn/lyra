@@ -1,46 +1,51 @@
-const arch = @import("arch.zig");
 const limine = @import("limine.zig");
 const memory = @import("memory.zig");
 
 const logger = @import("log.zig").Logger{ .name = "smp" };
 
-// INITIALIZATION
+// HELPER FUNCTIONS
 
-pub fn init() void {
+const gdt = @import("gdt.zig");
+const isr = @import("int/isr.zig");
+
+pub fn init(comptime entry: fn () noreturn) noreturn {
     const cpus = limine.cpus.response;
+    const cpu0 = cpus.cpus[0];
 
     // not sure if this can happen, but if it does
     // i don't want to deal with it at the moment
-    if (cpus.cpus[0].id != cpus.bsp_id)
-        logger.panic("cpu 0 id != bootstrap id", .{});
+    if (cpu0.id != cpus.bsp_id) logger.panic("cpu 0 id != bootstrap id", .{});
 
-    arch.prepCpus(cpus.count) catch |e|
-        logger.panic("prepping {} cpus failed: {}", .{ cpus.count, e });
-    arch.setCpu(0);
+    gdt.update(cpus.count) catch logger.panic("OOM while reinitializing GDT", .{});
+    isr.newStacks(cpus.count) catch logger.panic("OOM while setting up ", .{});
 
-    for (0..cpus.count) |i| {
+    const wrap = struct {
+        pub fn wrapped(cpu: *const limine.Cpu) callconv(.c) noreturn {
+            gdt.load(cpu.extra);
+            isr.storeStack();
+            logger.debug("cpu {} online (acpi_id: {})", .{ getCpu(), info().acpi_id });
+            entry();
+        }
+    };
+
+    for (1..cpus.count) |i| {
         const cpu = cpus.cpus[i];
         cpu.extra = i;
-        if (cpu.id != cpus.bsp_id)
-            limine.jumpCpu(cpu, cpuEntry);
+        cpu.jump(wrap.wrapped);
     }
 
-    logger.debug("boot cpu was {} (acpi_id: {})", .{ arch.getCpu(), info().acpi_id });
-}
-
-// ENTRYPOINT
-
-pub fn cpuEntry(cpu: *const limine.Cpu) callconv(.c) noreturn {
-    arch.setCpu(cpu.extra);
-    logger.debug("cpu {} online (acpi_id: {})", .{ arch.getCpu(), info().acpi_id });
-
-    while (true) arch.util.wfi();
+    cpu0.extra = 0;
+    gdt.load(0);
+    entry();
 }
 
 // CPU INFO
 
+/// Use the GDT to identify the current CPU.
+pub const getCpu = gdt.str;
+
 pub inline fn info() *const limine.Cpu {
-    return limine.cpus.response.cpus[arch.getCpu()];
+    return limine.cpus.response.cpus[getCpu()];
 }
 
 // THREAD-LOCAL STORAGE
@@ -72,7 +77,7 @@ pub fn LocalStorage(comptime T: type) type {
         // GET
 
         pub inline fn get(self: *Self) *T {
-            return &self.objects[arch.getCpu()];
+            return &self.objects[getCpu()];
         }
     };
 }
@@ -115,7 +120,7 @@ pub fn LockingStorage(comptime T: type) type {
         }
 
         pub inline fn lock(self: *Self) *T {
-            return self.lockCpu(arch.getCpu());
+            return self.lockCpu(getCpu());
         }
 
         // UNLOCKING
@@ -125,7 +130,7 @@ pub fn LockingStorage(comptime T: type) type {
         }
 
         pub inline fn unlock(self: *Self) void {
-            self.unlockCpu(arch.getCpu());
+            self.unlockCpu(getCpu());
         }
     };
 }

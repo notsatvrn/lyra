@@ -1,87 +1,72 @@
 const std = @import("std");
 const Target = std.Target;
+const Feature = Target.x86.Feature;
 const FeatureSet = Target.Cpu.Feature.Set;
 
 pub fn build(b: *std.Build) void {
     const arch = b.standardTargetOptions(.{}).result.cpu.arch;
+    if (arch != .x86_64) @panic("lyra only supports x86-64");
 
-    const features = switch (arch) {
-        .x86_64 => x86_64: {
-            const Feature = Target.x86.Feature;
-
-            // Disable all hardware floating point features.
-            var features_sub = FeatureSet.empty;
-            features_sub.addFeature(@intFromEnum(Feature.x87));
-            features_sub.addFeature(@intFromEnum(Feature.mmx));
-            features_sub.addFeature(@intFromEnum(Feature.sse));
-            features_sub.addFeature(@intFromEnum(Feature.sse2));
-            features_sub.addFeature(@intFromEnum(Feature.avx));
-            features_sub.addFeature(@intFromEnum(Feature.avx2));
-            // Enable software floating point instead.
-            var features_add = FeatureSet.empty;
-            features_add.addFeature(@intFromEnum(Feature.soft_float));
-
-            break :x86_64 .{ features_add, features_sub };
-        },
-        .aarch64, .riscv64 => .{ FeatureSet.empty, FeatureSet.empty },
-        else => @panic("Unsupported architecture. Only 64-bit x86, RISC-V, and ARM are supported."),
-    };
+    // Disable all hardware floating point features.
+    var features_sub = FeatureSet.empty;
+    features_sub.addFeature(@intFromEnum(Feature.x87));
+    features_sub.addFeature(@intFromEnum(Feature.mmx));
+    features_sub.addFeature(@intFromEnum(Feature.sse));
+    features_sub.addFeature(@intFromEnum(Feature.sse2));
+    features_sub.addFeature(@intFromEnum(Feature.avx));
+    features_sub.addFeature(@intFromEnum(Feature.avx2));
+    // Enable software floating point instead.
+    var features_add = FeatureSet.empty;
+    features_add.addFeature(@intFromEnum(Feature.soft_float));
 
     const target = b.resolveTargetQuery(.{
         .cpu_arch = arch,
         .cpu_model = .baseline,
-        .cpu_features_add = features[0],
-        .cpu_features_sub = features[1],
+        .cpu_features_add = features_add,
+        .cpu_features_sub = features_sub,
         .os_tag = .freestanding,
         .abi = .none,
         .ofmt = .elf,
     });
 
-    // Create the kernel executable.
+    const module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = b.standardOptimizeOption(.{}),
+        // Decrease binary size.
+        .strip = true,
+        // Disable features that are problematic in kernel space.
+        .pic = false,
+        .red_zone = false,
+        .stack_check = false,
+        .stack_protector = false,
+        // Needed for stack traces.
+        .omit_frame_pointer = false,
+        // Higher-half kernel code model.
+        .code_model = .kernel,
+    });
+
     const kernel = b.addExecutable(.{
         .name = "lyra",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = b.standardOptimizeOption(.{}),
-            .strip = true,
-        }),
+        .root_module = module,
         .linkage = .static,
         .use_lld = true,
         .use_llvm = true,
     });
 
-    // Disable features that are problematic in kernel space.
-    kernel.root_module.pic = false;
-    kernel.root_module.red_zone = false;
-    kernel.root_module.stack_check = false;
-    kernel.root_module.stack_protector = false;
-    kernel.want_lto = false;
+    // We want to use our own entry (kmain)
+    kernel.entry = .disabled;
+    // LTO causes boot failure.
+    kernel.lto = .none;
     // Delete unused sections to reduce the kernel size.
     kernel.link_function_sections = true;
     kernel.link_data_sections = true;
     kernel.link_gc_sections = true;
     // Force the page size to 4 KiB to prevent binary bloat.
     kernel.link_z_max_page_size = 0x1000;
-    // Frame pointer is needed for stack traces.
-    kernel.root_module.omit_frame_pointer = false;
-    // Code model for a higher half kernel.
-    if (arch == .x86_64) kernel.root_module.code_model = .kernel;
 
-    switch (arch) {
-        .x86_64 => {
-            kernel.setLinkerScript(b.path("src/arch/x86_64/linker.ld"));
-            kernel.addAssemblyFile(b.path("src/arch/x86_64/int/isr_stubs.s"));
-        },
-        inline else => |a| {
-            kernel.setLinkerScript(b.path("src/arch/" ++ @tagName(a) ++ "/linker.ld"));
-
-            if (b.lazyDependency("dtb", .{})) |dtb| {
-                const module = dtb.module("dtb");
-                kernel.root_module.addImport("dtb", module);
-            }
-        },
-    }
+    kernel.setLinkerScript(b.path("src/linker.ld"));
+    kernel.addAssemblyFile(b.path("src/int/isr_stubs.s"));
 
     const utils = b.dependency("utils", .{ .use_spinlock = true });
     const utils_module = utils.module("utils");

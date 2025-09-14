@@ -1,5 +1,5 @@
-pub const pmm = @import("pmm.zig");
-pub const vmm = @import("vmm.zig");
+pub const pmm = @import("memory/pmm.zig");
+pub const vmm = @import("memory/vmm.zig");
 
 // MATH UTILITIES
 
@@ -43,6 +43,8 @@ const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
 
+pub var ready = false;
+
 pub const PageAllocator = struct {
     pub const vtable = Allocator.VTable{
         .alloc = alloc,
@@ -53,7 +55,7 @@ pub const PageAllocator = struct {
 
     fn alloc(_: *anyopaque, n: usize, _: Alignment, _: usize) ?[*]u8 {
         std.debug.assert(n > 0);
-        if (n >= vmm.kernel.addr_space_end - min_page_size) return null;
+        if (n >= std.math.maxInt(usize) - min_page_size) return null;
         const block = pmm.map(.small, pagesNeeded(n, .small));
         return @ptrCast(block orelse return null);
     }

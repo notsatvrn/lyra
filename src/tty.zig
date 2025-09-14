@@ -1,10 +1,7 @@
 const std = @import("std");
 
-const arch = @import("arch.zig");
-
+pub const Framebuffer = @import("tty/Framebuffer.zig");
 pub const TextMode = @import("tty/TextMode.zig");
-const fb = @import("tty/framebuffer.zig");
-pub const Framebuffer = fb.AnyTerminal;
 
 pub const colors = @import("tty/colors.zig");
 pub const Color = colors.Color;
@@ -20,34 +17,32 @@ const VideoMode = limine.Framebuffer.VideoMode;
 
 // OUTPUTS
 
-pub var framebuffer: ?Framebuffer = null;
-pub var generic: ?Generic = null;
-var render = RenderState.init();
-
-pub const Generic = struct {
-    ptr: *anyopaque,
-    vtable: VTable,
-
-    pub const VTable = struct {
-        print: *const fn (*anyopaque, []const u8) void,
-        clear: *const fn (*anyopaque) void,
-    };
+pub const Output = union(enum) {
+    text: TextMode,
+    fb: Framebuffer,
 };
+
+pub var output = Output{ .text = .{} };
+pub var state: RenderState = undefined;
 
 // BASICS
 
 pub inline fn print(string: []const u8) void {
-    if (framebuffer) |*term| term.print(string);
-    if (generic) |*term| term.vtable.print(term.ptr, string);
+    switch (output) {
+        .text => |*term| term.print(string),
+        .fb => |*fb| fb.print(string),
+    }
 }
 
 pub inline fn clear() void {
-    if (framebuffer) |*term| term.clear();
-    if (generic) |*term| term.vtable.clear(term.ptr);
+    switch (output) {
+        .text => |*term| term.clear(),
+        .fb => |*fb| fb.clear(),
+    }
 }
 
 pub inline fn sync() void {
-    if (framebuffer) |*term| term.sync();
+    if (output == .fb) output.fb.sync();
 }
 
 // FORMATTING
@@ -85,8 +80,8 @@ pub const AnsiParser = struct {
     pub fn checkChar(self: *Self, char: u8) bool {
         // TODO: for now it's always a nop, but we need a parser
         if (self.parsing) |p| {
-            _ = p;
-            if (self.nop) {
+            self.parsing = null;
+            if (p.nop) {
                 switch (char) {
                     'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'f' | 'G' | 'H' | 'h' | 'i' | 'J' | 'K' | 'l' | 'm' | 'n' | 'S' | 's' | 'T' | 'u' => self.parsing = null,
                     else => {},

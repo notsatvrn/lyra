@@ -9,10 +9,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const limine = @import("limine.zig");
-const logger = @import("log.zig").Logger{ .name = "pmm" };
+const limine = @import("../limine.zig");
+const logger = @import("../log.zig").Logger{ .name = "pmm" };
 
-const memory = @import("memory.zig");
+const memory = @import("../memory.zig");
 const PageSize = memory.PageSize;
 const min_page_size = memory.min_page_size;
 const pagesNeeded = memory.pagesNeeded;
@@ -20,7 +20,7 @@ const pagesNeeded = memory.pagesNeeded;
 // REGION STRUCTURE
 
 pub const Region = struct {
-    const UsedSet = @import("memory/UsedSet.zig");
+    const UsedSet = @import("UsedSet.zig");
     const Lock = @import("utils").lock.SpinSharedLock;
 
     ptr: [*]u8,
@@ -81,11 +81,12 @@ pub const Region = struct {
 var regions: []Region = undefined;
 var total: usize = 0;
 
-pub inline fn init() void {
+pub inline fn init() usize {
     var usable: usize = 0;
 
     var largest: []u8 = "";
     var bitsets_size: usize = 0;
+    var end: usize = 0;
 
     logger.debug("memory regions: ", .{});
     for (0..limine.mmap.response.count) |i| {
@@ -102,6 +103,8 @@ pub inline fn init() void {
         entry.ptr = limine.convertPointer(entry.ptr);
         // find the largest region and put region info at the start
         if (entry.len > largest.len) largest = entry.ptr[0..entry.len];
+        // find the real end of physical memory
+        if (addr > end) end = addr + entry.len;
 
         usable += 1;
     }
@@ -159,6 +162,7 @@ pub inline fn init() void {
     }
 
     logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
+    return end | limine.hhdm.response.offset;
 }
 
 // REGION UTILITIES

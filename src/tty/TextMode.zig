@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const tty = @import("../tty.zig");
-const arch = @import("../arch.zig");
+const io = @import("../io.zig");
 const Color = @import("colors.zig").Basic;
 
 // STATE / INITIALIZATION
@@ -10,7 +10,8 @@ const width = 80;
 const height = 25;
 const size = width * height;
 
-buf: []Entry,
+const buffer = @as([*]Entry, @ptrFromInt(0xB8000))[0..size];
+
 pos: u16 = 0,
 
 foreground: Color = .light_gray,
@@ -19,17 +20,6 @@ background: Color = .black,
 cursor: bool = true,
 
 const Self = @This();
-
-pub inline fn initAddr(addr: usize) Self {
-    return .{ .buf = @as([*]Entry, @ptrFromInt(addr))[0..size] };
-}
-
-pub inline fn init(ptr: anytype) Self {
-    if (@typeInfo(@TypeOf(ptr)) != .pointer)
-        @compileError("non-pointer in Console.TextMode.init");
-
-    return .{ .buf = @as([*]Entry, @ptrCast(ptr))[0..size] };
-}
 
 // IMPLEMENTATION
 
@@ -47,12 +37,7 @@ const Entry = packed struct {
     }
 };
 
-pub inline fn writeChar(self: *Self, char: u8) void {
-    self.buf[self.pos] = Entry.fromChar(self, char);
-    self.pos += 1;
-}
-
-fn put(self: *Self, char: u8) void {
+inline fn put(self: *Self, char: u8) void {
     switch (char) {
         '\n' => {
             self.pos += width - (self.pos % width);
@@ -61,59 +46,42 @@ fn put(self: *Self, char: u8) void {
         // BS / DEL
         '\x08', '\x7F' => if (self.pos > 0) {
             self.pos -= 1;
-            self.buf[self.pos] = Entry.fromChar(self, ' ');
+            buffer[self.pos] = Entry.fromChar(self, ' ');
         },
         else => {
-            self.buf[self.pos] = Entry.fromChar(self, char);
+            buffer[self.pos] = Entry.fromChar(self, char);
             self.pos += 1;
             if (self.pos >= size) self.scroll();
         },
     }
 }
 
+inline fn updateCursor(self: Self) void {
+    if (!self.cursor) return;
+
+    io.out(u8, 0x3D4, 0x0F);
+    io.out(u8, 0x3D5, @truncate(self.pos));
+    io.out(u8, 0x3D4, 0x0E);
+    io.out(u8, 0x3D5, @truncate(self.pos >> 8));
+}
+
 inline fn scroll(self: *Self) void {
     // Copy buffer data starting from the second line to the start.
-    std.mem.copyForwards(Entry, self.buf[0 .. size - width], self.buf[width..]);
+    std.mem.copyForwards(Entry, buffer[0 .. size - width], buffer[width..]);
     // Clear the last line.
-    @memset(self.buf[size - width ..], Entry.fromChar(self, ' '));
+    @memset(buffer[size - width ..], Entry.fromChar(self, ' '));
     // Move cursor position up a row.
     self.pos -= width;
     // Update cursor.
     self.updateCursor();
 }
 
-pub inline fn print(self: *Self, string: []const u8) void {
+pub fn print(self: *Self, string: []const u8) void {
     for (string) |char| self.put(char);
     self.updateCursor();
 }
 
 pub inline fn clear(self: *Self) void {
-    @memset(self.buf, Entry.fromChar(self, ' '));
+    @memset(buffer, Entry.fromChar(self, ' '));
     self.pos = 0;
-}
-
-inline fn updateCursor(self: *const Self) void {
-    @import("../arch.zig").text_mode.?.updateCursor(self);
-}
-
-// GENERIC INTERFACE
-
-fn genericPrint(tm: *anyopaque, string: []const u8) void {
-    print(@ptrCast(@alignCast(tm)), string);
-}
-
-fn genericClear(tm: *anyopaque) void {
-    clear(@ptrCast(@alignCast(tm)));
-}
-
-pub const generic_vtable = tty.Generic.VTable{
-    .print = &genericPrint,
-    .clear = &genericClear,
-};
-
-pub inline fn generic(self: *Self) tty.Generic {
-    return .{
-        .ptr = @ptrCast(self),
-        .vtable = generic_vtable,
-    };
 }

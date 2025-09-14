@@ -157,22 +157,17 @@ pub inline fn convertPointer(ptr: anytype) @TypeOf(ptr) {
 
 pub export var paging_mode linksection(".requests") = PagingModeRequest{};
 
-// requesting 57-bit mode; 1 on x86-64 and aarch64, 2 on riscv64
-const highest_paging_mode = if (builtin.cpu.arch == .riscv64) 2 else 1;
-
 pub const PagingModeRequest = extern struct {
     id: [4]u64 = common_magic ++ .{ 0x95c1a0edab0944cb, 0xa4e5cb3842f7488a },
     revision: u64 = 0,
     response: *const PagingModeResponse = undefined,
-    mode: u64 = highest_paging_mode,
+    mode: u64 = 1, // request 57-bit mode
 };
 
 pub const PagingModeResponse = extern struct {
     revision: u64,
     mode: u64,
 };
-
-pub var paging_levels: u3 = 0;
 
 // SMBIOS
 
@@ -294,52 +289,14 @@ pub const RsdpResponse = extern struct {
 
 pub export var cpus linksection(".requests") = CpusRequest{};
 
-// if we're on x86-64, we want to request x2APIC support.
-const cpus_flags = if (builtin.cpu.arch == .x86_64) 1 else 0;
-
 pub const CpusRequest = extern struct {
     id: [4]u64 = common_magic ++ .{ 0x95a67b819a1b857e, 0xa0b61b723b6a73e0 },
     revision: u64 = 0,
     response: *const CpusResponse = undefined,
-    flags: u64 = cpus_flags,
+    flags: u64 = 1, // request x2APIC support
 };
 
-pub const CpusResponse = switch (builtin.cpu.arch) {
-    .x86_64 => CpusResponseX86,
-    // aarch64 and riscv64
-    else => extern struct {
-        revision: u64,
-        flags: u64,
-        bsp_id: u64,
-        count: u64,
-        cpus: [*]const *Cpu,
-    },
-};
-
-pub const Cpu = switch (builtin.cpu.arch) {
-    .x86_64 => CpuX86,
-    .aarch64 => CpuAArch64,
-    .riscv64 => CpuRiscV64,
-    else => unreachable,
-};
-
-pub const CpuEntry = *const fn (*Cpu) callconv(.c) noreturn;
-
-pub inline fn jumpCpu(cpu: *Cpu, entry: CpuEntry) void {
-    @atomicStore(CpuEntry, &cpu.goto_addr, entry, .seq_cst);
-}
-
-// MP: x86-64
-
-const CpuX86 = extern struct {
-    acpi_id: u32,
-    id: u32,
-    reserved: u64,
-    goto_addr: CpuEntry,
-    extra: u64,
-};
-
-const CpusResponseX86 = extern struct {
+pub const CpusResponse = extern struct {
     revision: u64,
     flags: u32,
     bsp_id: u32,
@@ -347,29 +304,16 @@ const CpusResponseX86 = extern struct {
     cpus: [*]const *Cpu,
 };
 
-// MP: aarch64
+pub const CpuEntry = *const fn (*Cpu) callconv(.c) noreturn;
 
-const CpuAArch64 = extern struct {
+pub const Cpu = extern struct {
     acpi_id: u32,
-    reserved1: u32,
-    id: u64,
+    id: u32,
     reserved: u64,
     goto_addr: CpuEntry,
     extra: u64,
+
+    pub inline fn jump(cpu: *Cpu, entry: CpuEntry) void {
+        @atomicStore(CpuEntry, &cpu.goto_addr, entry, .seq_cst);
+    }
 };
-
-// MP: riscv64
-
-const CpuRiscV64 = extern struct {
-    acpi_id: u64,
-    id: u64,
-    reserved: u64,
-    goto_addr: CpuEntry,
-    extra: u64,
-};
-
-// PARSING
-
-pub inline fn parse() void {
-    paging_levels = @truncate(paging_mode.response.mode + (5 - highest_paging_mode));
-}

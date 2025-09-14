@@ -4,7 +4,7 @@ const std = @import("std");
 
 const memory = @import("../memory.zig");
 const Size = memory.PageSize;
-const paging = @import("../arch.zig").paging;
+const paging = @import("paging.zig");
 const PageTable = paging.PageTable;
 pub const Entry = paging.Entry;
 
@@ -71,5 +71,6 @@ inline fn mapInner(self: *Self, phys: ?usize, virt: usize, len: usize, size: Siz
     const len_real = (offset + len + size_bytes) & ~page_mask;
     const end = virt_page + len_real - 1;
 
-    try paging.mapRecursive(self.top, &self.pool, limine.paging_levels, virt_page, end, phys_page, size, flags);
+    const level: u3 = @truncate(4 + limine.paging_mode.response.mode); // 1 = level 5
+    try paging.mapRecursive(self.top, &self.pool, level, virt_page, end, phys_page, size, flags);
 }

@@ -1,28 +1,28 @@
 const std = @import("std");
-const arch = @import("arch.zig").clock;
+const tsc = @import("clock/tsc.zig");
+const rtc = @import("clock/rtc.zig");
 
 const logger = @import("log.zig").Logger{ .name = "clock" };
 
 // COUNTER-BASED CLOCK
-// https://wiki.osdev.org/TSC - x86-64
-// https://wiki.osdev.org/HPET - x86-64 (fallback)
-// https://wiki.osdev.org/ARMv7_Generic_Timers - aarch64
+// https://wiki.osdev.org/TSC
+// https://wiki.osdev.org/HPET (fallback in the future)
 
 pub var init: u64 = 0;
 pub var speed: u64 = 0; // in hertz
 
 pub inline fn setup() void {
-    speed = arch.counterSpeed();
+    speed = tsc.counterSpeed();
     logger.info("counter speed: {}MHz", .{speed / std.time.ns_per_ms});
-    init = arch.counter();
+    init = tsc.counter();
     // counts per microsecond for stall power consumption hack
     us_counts = countsPerNanos(std.time.ns_per_us);
-    setupClock(arch.readSystemClock());
+    setupClock(rtc.read());
     logger.info("timestamp: {}", .{timestamp()});
 }
 
 inline fn nanoSinceCount(count: u64) u64 {
-    const count_diff = @as(u128, arch.counter() - count) * std.time.ns_per_s;
+    const count_diff = @as(u128, tsc.counter() - count) * std.time.ns_per_s;
     return @truncate(count_diff / @as(u128, speed));
 }
 
@@ -32,9 +32,9 @@ pub fn nanoSinceBoot() u64 {
     return nanoSinceCount(init);
 }
 
-// SYSTEM CLOCK
+// REAL TIME CLOCK (RTC)
 
-// initial system clock reading + counter avoids slow/inaccurate system clock reads
+// initial system clock reading + counter avoids slow/inaccurate RTC reads
 // (count_init - current count) * 1000 / CPU speed + base_init = current time
 const ClockState = struct {
     base_init: u64,
@@ -48,7 +48,7 @@ var clock_state: ?ClockState = null;
 pub inline fn setupClock(base: u64) void {
     if (base != 0) clock_state = .{
         .base_init = base,
-        .count_init = arch.counter(),
+        .count_init = tsc.counter(),
     };
 }
 
@@ -72,7 +72,7 @@ var us_counts: usize = 0;
 // busy-wait for n nanoseconds
 // ideal for smaller waits
 pub fn stall(n: usize) void {
-    const start = arch.counter();
+    const start = tsc.counter();
     const goal = start + countsPerNanos(n);
 
     // improve power consumption on longer stalls
@@ -80,9 +80,9 @@ pub fn stall(n: usize) void {
     // should be accurate to about a microsec
     if (n > std.time.ns_per_us) {
         const ugoal = goal - us_counts;
-        while (ugoal > arch.counter())
+        while (ugoal > tsc.counter())
             std.atomic.spinLoopHint();
     }
 
-    while (goal > arch.counter()) {}
+    while (goal > tsc.counter()) {}
 }

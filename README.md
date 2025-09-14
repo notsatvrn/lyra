@@ -1,28 +1,15 @@
 # lyra
 
-Lyra is a 64-bit UNIX-like hobby kernel for learning operating system development in [Zig](https://ziglang.org/)
+Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.org/)
 
 ## Goals
 
 - Readable and easy to understand codebase
 - Modern design with [Limine](https://github.com/limine-bootloader/limine) boot protocol
-- (in the future) Multi-architecture support
 
 ## Progress
 
-- generic
-  - [ ] tty
-    - [x] text mode backend
-    - [x] framebuffer backend
-    - [ ] ansi escape codes
-  - [ ] memory
-    - [x] pmm
-    - [ ] vmm
-  - [ ] process scheduler
-    - [x] red-black tree impl
-    - [ ] process structures
-    - [ ] smp awareness
-- x86-64
+- internals
   - [x] gdt/idt
   - [x] paging
     - [x] read
@@ -36,10 +23,18 @@ Lyra is a 64-bit UNIX-like hobby kernel for learning operating system developmen
   - [ ] smp
     - [x] core id storage
   - [x] pci device tree
-- aarch64
-  - [ ] system clock
-    - [x] counter
-    - [ ] hw clock reading
+- abstractions
+  - [ ] tty
+    - [x] text mode backend
+    - [x] framebuffer backend
+    - [ ] ansi escape codes
+  - [ ] memory
+    - [x] pmm
+    - [ ] vmm
+  - [ ] process scheduler
+    - [x] red-black tree impl
+    - [ ] process structures
+    - [ ] smp awareness
 
 ## Credits
 

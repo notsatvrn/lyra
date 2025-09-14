@@ -1,11 +1,9 @@
-//! Paging helpers implementation for x86-64.
-
 const std = @import("std");
 
-const util = @import("util.zig");
-const cpuid = @import("cpuid.zig");
-const limine = @import("../../limine.zig");
-const memory = @import("../../memory.zig");
+const util = @import("../util.zig");
+const cpuid = @import("../cpuid.zig");
+const limine = @import("../limine.zig");
+const memory = @import("../memory.zig");
 const allocator = memory.page_allocator;
 const Size = memory.PageSize;
 
@@ -71,7 +69,7 @@ pub const Entry = packed struct(u64) {
     }
 };
 
-pub const Pool = @import("../../memory/bitset_object_pool.zig").BitSetObjectPool(PageTable, .{});
+pub const Pool = @import("bitset_object_pool.zig").BitSetObjectPool(PageTable, .{});
 
 // LOAD/STORE PAGE TABLE POINTER
 

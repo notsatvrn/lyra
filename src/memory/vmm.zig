@@ -4,20 +4,17 @@
 //! the kernel virtual memory layout, memory-mapped I/O, etc.
 
 const std = @import("std");
-const memory = @import("memory.zig");
+const memory = @import("../memory.zig");
 
-pub const ManagedPageTable = @import("memory/ManagedPageTable.zig");
+pub const ManagedPageTable = @import("ManagedPageTable.zig");
 
 /// Kernel virtual memory structures.
 pub const kernel = struct {
-    const paging = @import("arch.zig").paging;
     const Lock = @import("utils").lock.SpinSharedLock;
 
     pub var page_table: ManagedPageTable = .{ .top = undefined };
     pub var page_table_lock: Lock = .{};
-
-    pub const addr_space_end = std.math.maxInt(usize);
-    pub var mmio_start: usize = addr_space_end - (memory.TB - 1);
+    pub var mmio_start: usize = 0;
 };
 
 pub const io = struct {

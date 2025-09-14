@@ -5,16 +5,26 @@ pub const tty = @import("tty.zig");
 pub const colors = tty.colors;
 pub const Ansi = tty.effects.Ansi;
 
-const arch = @import("arch.zig");
-const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
 const Lock = @import("utils").lock.SpinLock;
+const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;
+const halt = @import("util.zig").halt;
 
 var lock = Lock{};
+
+// LOG BUFFER
+
+const memory = @import("memory.zig");
+
+pub var buffer = std.ArrayList(u8){};
+const buf_writer = buffer.writer(memory.allocator);
 
 // BASIC PRINTING / WRITER
 
 fn write(_: *const anyopaque, bytes: []const u8) error{}!usize {
     tty.print(bytes);
+    if (memory.ready)
+        buf_writer.writeAll(bytes) catch
+            @panic("OOM in log");
     return bytes.len;
 }
 
@@ -106,7 +116,6 @@ pub inline fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: an
     lock.lock();
     timeAndReset();
     writer.print("[PANIC] " ++ fmt ++ "\n", args) catch unreachable;
-    //if (ert) |s| writer.print("stack trace:\n{}", .{s}) catch unreachable;
     tty.sync();
-    arch.util.halt();
+    halt();
 }

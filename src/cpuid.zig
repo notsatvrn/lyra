@@ -1,4 +1,4 @@
-const limine = @import("../../limine.zig");
+const limine = @import("limine.zig");
 
 // VENDOR
 
