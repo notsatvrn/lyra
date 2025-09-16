@@ -81,45 +81,23 @@ pub fn makePixel(self: Self, color: Rgb.Bpp36) u64 {
     return r | g | b;
 }
 
-pub inline fn writePixelBytes(self: Self, comptime bytes: usize, pos: usize, pixel: u64) void {
-    const Pixel = std.meta.Int(.unsigned, bytes * 8);
-    const window: *[bytes]u8 = @ptrCast(self.buf[pos .. pos + bytes]);
-    std.mem.writeInt(Pixel, window, @truncate(pixel), .little);
-}
-
-pub inline fn writePixel(self: Self, pos: usize, pixel: u64) void {
-    @setEvalBranchQuota(10000);
-
+pub fn writePixel(self: Self, pos: usize, pixel: u64) void {
     switch (self.bytes) {
-        inline 2...5 => |bytes| self.writePixelBytes(bytes, pos, pixel),
+        inline 2...5 => |bytes| {
+            const Pixel = std.meta.Int(.unsigned, bytes * 8);
+            const window: *[bytes]u8 = @ptrCast(self.buf[pos .. pos + bytes]);
+            std.mem.writeInt(Pixel, window, @truncate(pixel), .little);
+        },
         else => unreachable,
     }
 }
 
 pub inline fn writePixelNTimes(self: Self, pos: usize, pixel: u64, n: usize) void {
-    var offset: usize = pos;
-    switch (self.bytes) {
-        inline 2...5 => |bytes| for (0..n) |_| {
-            self.writePixelBytes(bytes, offset, pixel);
-            offset += bytes;
-        },
-        else => unreachable,
-    }
+    for (0..n) |i| self.writePixel(pos + (self.bytes * i), pixel);
 }
 
 pub inline fn drawRect(self: Self, pos: usize, pixel: u64, w: usize, h: usize) void {
-    var row: usize = pos;
-    switch (self.bytes) {
-        inline 2...5 => |bytes| for (0..h) |_| {
-            var offset: usize = row;
-            for (0..w) |_| {
-                self.writePixelBytes(bytes, offset, pixel);
-                offset += bytes;
-            }
-            row += self.mode.pitch;
-        },
-        else => unreachable,
-    }
+    for (0..h) |i| self.writePixelNTimes(pos + (self.mode.pitch * i), pixel, w);
 }
 
 pub inline fn writeColor(self: Self, pos: usize, color: Rgb.Bpp36) void {

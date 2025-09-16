@@ -43,8 +43,7 @@ export fn uacpi_kernel_log(
     str: [*c]const u8,
 ) callconv(.c) void {
     const slice = std.mem.span(str);
-    // remove the new line at the end
-    const msg = slice[0 .. slice.len - 1];
+    const msg = std.mem.trimEnd(u8, slice, " \n");
     switch (level) {
         c.UACPI_LOG_INFO => logger.info("{s}", .{msg}),
         c.UACPI_LOG_WARN => logger.warn("{s}", .{msg}),

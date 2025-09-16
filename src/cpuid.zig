@@ -21,7 +21,7 @@ pub const Vendor = enum {
 
 pub var vendor: Vendor = .other;
 
-inline fn integerify(comptime str: []const u8) u96 {
+fn integerify(comptime str: []const u8) u96 {
     if (str.len != 12) @compileError("integerify with string len != 12");
     return @bitCast(@as(*const [12]u8, @ptrCast(str)).*);
 }

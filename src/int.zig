@@ -148,7 +148,7 @@ pub inline fn register(n: u8, handler: ?Handler) void {
 }
 
 // Build a wrapper to provide masking during execution (if needed) and EOI afterwards.
-inline fn wrapIRQ(handler: IRQHandler, comptime mask: bool) Handler {
+fn wrapIRQ(handler: IRQHandler, comptime mask: bool) Handler {
     const wrappers = struct {
         fn wrappedMasking(stack: *InterruptStack) callconv(.c) void {
             const i: u4 = @truncate(stack.interrupt_number - IRQ_0);

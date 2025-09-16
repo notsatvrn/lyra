@@ -32,7 +32,7 @@ const writer = std.Io.GenericWriter(void, WriteError, write){ .context = void{} 
 
 fn printRaw(comptime fmt: []const u8, args: anytype) !void {
     const sec = @as(f64, @floatFromInt(nanoSinceBoot())) / std.time.ns_per_s;
-    try writer.print("{f}[{d: >12.6}] " ++ fmt, .{ Ansi.reset, sec } ++ args);
+    try writer.print("{f}[{d: >12.6}] " ++ fmt ++ "\n", .{ Ansi.reset, sec } ++ args);
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {
@@ -74,7 +74,7 @@ pub const Logger = struct {
         }
 
         const ansi_color = Ansi.setColor(.foreground, .{ .basic = color });
-        print("[{f}{s}{f}] {s}: " ++ fmt ++ "\n", .{ ansi_color, str, Ansi.reset, self.name } ++ args);
+        print("[{f}{s}{f}] {s}: " ++ fmt, .{ ansi_color, str, Ansi.reset, self.name } ++ args);
     }
 
     pub inline fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
@@ -104,14 +104,14 @@ pub fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: anytype) 
     @branchHint(.cold);
     lock.lock();
     memory.ready = false; // stop allocating log buffer
-    printRaw("[PANIC] " ++ fmt ++ "\n", args) catch unreachable;
-    printRaw("call trace:\n", .{}) catch unreachable;
+    printRaw("[PANIC] " ++ fmt, args) catch unreachable;
+    printRaw("call trace:", .{}) catch unreachable;
 
     var it = std.debug.StackIterator.init(first_trace_addr, null);
     while (it.next()) |return_address| {
         const address = return_address -| 1;
         if (address == 0) break;
-        printRaw("- 0x{x:0>16}\n", .{address}) catch unreachable;
+        printRaw("- 0x{x:0>16}", .{address}) catch unreachable;
     }
 
     tty.sync();

@@ -3,11 +3,6 @@
     .version = "0.0.0",
     .fingerprint = 0x2c288ec2669c1edf,
     .dependencies = .{
-        .dtb = .{
-            .url = "git+https://github.com/kivikakk/dtb.zig#74945f6e1801602d99cfd90bbbbe16e8a3c2cb67",
-            .hash = "dtb-0.0.0-gULdmfYDAgCarNiOCj8Wj7QqXImFyMvrax96tpg4qNBW",
-            .lazy = true,
-        },
         .utils = .{
             .url = "git+https://github.com/notsatvrn/zig-utils#4ea26b7db90930e83c308d9327197f2dd935da62",
             .hash = "utils-0.0.0-mXwaHrmaAAD2ydWvRAaMUtq84oVyhZFkCkUH7PTFw-Tm",

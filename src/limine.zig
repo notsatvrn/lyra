@@ -87,22 +87,6 @@ pub const Framebuffer = extern struct {
         blue_mask_size: u8,
         blue_mask_shift: u8,
     };
-
-    pub fn defaultVideoMode(self: Framebuffer) VideoMode {
-        return .{
-            .pitch = self.pitch,
-            .width = self.width,
-            .height = self.height,
-            .bpp = self.bpp,
-            .memory_model = self.memory_model,
-            .red_mask_size = self.red_mask_size,
-            .red_mask_shift = self.red_mask_shift,
-            .green_mask_size = self.green_mask_size,
-            .green_mask_shift = self.green_mask_shift,
-            .blue_mask_size = self.blue_mask_size,
-            .blue_mask_shift = self.blue_mask_shift,
-        };
-    }
 };
 
 // MEMORY MAP

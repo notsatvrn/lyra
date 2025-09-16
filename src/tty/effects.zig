@@ -7,11 +7,10 @@ const Color = colors.Color;
 
 pub const ColorPart = enum(u8) { foreground = 38, background = 48, underline = 58 };
 
-pub inline fn writeColorSGR(color: Color, writer: *std.Io.Writer, part: ColorPart) !void {
+inline fn writeColorSGR(color: Color, writer: *std.Io.Writer, part: ColorPart) !void {
     return print: switch (color) {
-        .basic => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), @intFromEnum(v) }),
+        .basic => |v| continue :print .{ .@"256" = @intFromEnum(v) },
         .@"256" => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), v }),
-        .hsl => |v| continue :print .{ .rgb = colors.Rgb.fromHsl(v) },
         .rgb => |v| {
             const rgb24 = v.getSize(.bpp24);
             const params = .{ @intFromEnum(part), rgb24.r, rgb24.g, rgb24.b };
@@ -74,7 +73,6 @@ pub const StatefulEffect = union(Effect) {
     };
 };
 
-// includes effect states
 pub const Effects = struct {
     inner: Effect.Set = Effect.Set.initEmpty(),
     underline: StatefulEffect.Underline = .single,
@@ -114,6 +112,8 @@ pub const Effects = struct {
 
 // ANSI ESCAPE CODES
 
+const memory = @import("../memory.zig");
+
 pub const Ansi = union(enum) {
     sgr: Sgr,
 
@@ -140,7 +140,7 @@ pub const Ansi = union(enum) {
     pub const esc = '\x1B';
 
     pub fn format(self: Ansi, writer: *std.Io.Writer) !void {
-        if (true) return;
+        if (!memory.ready) return;
 
         try writer.writeByte(esc);
         switch (self) {
@@ -154,5 +154,38 @@ pub const Ansi = union(enum) {
 
     pub inline fn setColor(part: ColorPart, color: Color) Ansi {
         return .{ .sgr = .{ .set_color = .{ .part = part, .color = color } } };
+    }
+};
+
+// ANSI ESCAPE CODE PARSER
+
+// The ANSI escape parser used by all TTY implementations
+pub const AnsiParser = struct {
+    parsing: ?Parsing = null,
+    nop: bool = false,
+
+    const Self = @This();
+
+    const Parsing = struct {
+        buffer: std.ArrayList(u8),
+    };
+
+    pub fn checkChar(self: *Self, char: u8) bool {
+        if (self.parsing) |*p| {
+            _ = p;
+            // TODO: for now it's always a nop, but we need a parser
+            if (self.nop or true) {
+                switch (char) {
+                    'A', 'B', 'C', 'D', 'E', 'F', 'f', 'G', 'H', 'h', 'i', 'J', 'K', 'l', 'm', 'n', 'S', 's', 'T', 'u' => self.parsing = null,
+                    else => {},
+                }
+            }
+        } else if (char == Ansi.esc) {
+            self.parsing = .{
+                .buffer = std.ArrayList(u8).initCapacity(memory.allocator, 16) catch return true,
+            };
+        } else return false;
+
+        return true;
     }
 };

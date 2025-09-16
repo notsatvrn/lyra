@@ -33,8 +33,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = b.standardOptimizeOption(.{}),
-        // Decrease binary size.
-        .strip = true,
         // Disable features that are problematic in kernel space.
         .pic = false,
         .red_zone = false,

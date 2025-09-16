@@ -54,7 +54,7 @@ fn pitTimerReading() usize {
 
 const cycle_goal = 0.005; // consistency goal of 0.5%
 
-pub inline fn counterSpeed() u64 {
+pub fn counterSpeed() u64 {
     pit.setDivisor(pit.max_divisor);
 
     int.registerIRQ(0, pitHandler, false);

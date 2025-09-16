@@ -24,26 +24,7 @@ export fn stage1() noreturn {
     int.idt.init();
     int.isr.storeStack();
 
-    const framebuffers = limine.fb.response;
-    if (framebuffers.count > 0) {
-        // start logging to the smallest framebuffer
-        // when we bring up more, they'll mirror this one
-        var smallest = framebuffers.entries[0];
-
-        for (0..framebuffers.count) |i| {
-            const this = framebuffers.entries[i];
-
-            if (this.width < smallest.width and
-                this.height < smallest.height)
-                smallest = this;
-        }
-
-        const mode = smallest.defaultVideoMode();
-        const fb = tty.Framebuffer.init(smallest.ptr, &mode);
-        tty.output = .{ .fb = fb };
-    }
-    tty.state = .init();
-    tty.clear();
+    tty.init();
 
     logger.info("bootloader was {s} {s}", .{
         limine.bootldr.response.name,
@@ -62,26 +43,7 @@ export fn stage1() noreturn {
     memory.vmm.kernel.page_table.load();
     memory.ready = true;
 
-    if (framebuffers.count > 0) fbsetup: {
-        const smallest = tty.output.fb;
-
-        var mode = smallest.buffer.mode.*;
-        // virtual framebuffer, don't use monitor pitch
-        mode.pitch = mode.width * smallest.buffer.bytes;
-        var fb = tty.Framebuffer.initVirtual(&mode) catch break :fbsetup;
-
-        fb.cursor = smallest.cursor;
-        fb.buffer.copy(&smallest.buffer, null);
-
-        for (0..framebuffers.count) |i| {
-            const mirror = framebuffers.entries[i];
-            const mirror_mode = mirror.defaultVideoMode();
-            const mirror_fb = gfx.Framebuffer.init(mirror.ptr, &mirror_mode);
-            fb.addOutput(mirror_fb) catch break;
-        }
-
-        tty.output.fb = fb;
-    }
+    tty.initDoubleBuffering();
 
     int.remapPIC(32, 40);
     util.enablePICInterrupts();

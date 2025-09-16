@@ -5,10 +5,6 @@ pub const Hsl = packed struct {
     s: f64,
     l: f64,
 
-    pub inline fn dim(self: Hsl) Hsl {
-        return .{ .h = self.h, .s = self.s * 0.75, .l = self.l * 0.75 };
-    }
-
     // CONVERSIONS
 
     pub inline fn toRgb(self: Hsl) Rgb {
@@ -17,6 +13,17 @@ pub const Hsl = packed struct {
 
     pub inline fn fromRgb(rgb: Rgb) Hsl {
         return rgb.toHsl();
+    }
+
+    // COMPARISON
+
+    pub fn compare(self: Hsl, other: Hsl) f64 {
+        const h = 1 - @abs(other.h - self.h);
+        const s = 1 - @abs(other.s - self.s);
+        const l = 1 - @abs(other.l - self.l);
+
+        // importance: hue, lightness, saturation
+        return h * 0.45 + s * 0.20 + l * 0.35;
     }
 };
 
@@ -54,6 +61,21 @@ pub const Rgb = union(RgbSize) {
                 .b = @truncate(hex),
             };
         }
+
+        inline fn upscale(bpp24: u8) u12 {
+            var out = @as(u12, bpp24) << 4;
+            // duplicate the lower 4 bits
+            out |= @as(u12, bpp24 & 0xF);
+            return out;
+        }
+
+        pub fn toBpp36(self: Bpp24) Bpp36 {
+            return .{
+                .r = upscale(self.r),
+                .g = upscale(self.g),
+                .b = upscale(self.b),
+            };
+        }
     };
 
     // HSL conversion algos from https://gist.github.com/ciembor/1494530
@@ -64,6 +86,36 @@ pub const Rgb = union(RgbSize) {
 
         pub inline fn toGeneric(self: Bpp36) Rgb {
             return .{ .bpp36 = self };
+        }
+
+        pub fn toBpp24(self: Bpp36) Bpp24 {
+            return .{
+                // truncate the lower 4 bits
+                .r = @truncate(self.r >> 4),
+                .g = @truncate(self.g >> 4),
+                .b = @truncate(self.b >> 4),
+            };
+        }
+
+        // MIXING
+
+        pub fn mix(a: Bpp36, b: Bpp36, ratio: f64) Bpp36 {
+            const ap = @min(@max(ratio, 0.0), 1.0);
+            const bp = 1.0 - ap;
+
+            const ar = @as(f64, @floatFromInt(a.r)) * ap;
+            const ag = @as(f64, @floatFromInt(a.g)) * ap;
+            const ab = @as(f64, @floatFromInt(a.b)) * ap;
+
+            const br = @as(f64, @floatFromInt(b.r)) * bp;
+            const bg = @as(f64, @floatFromInt(b.g)) * bp;
+            const bb = @as(f64, @floatFromInt(b.b)) * bp;
+
+            return .{
+                .r = @intFromFloat(ar + br),
+                .g = @intFromFloat(ag + bg),
+                .b = @intFromFloat(ab + bb),
+            };
         }
 
         // color maximums
@@ -160,35 +212,15 @@ pub const Rgb = union(RgbSize) {
     // SCALING CONVERSIONS
 
     pub inline fn getSize(self: Rgb, comptime size: RgbSize) SizePayload(size) {
-        switch (self) {
-            inline else => |v, src_size| {
-                if (src_size == size) return v;
-
-                const src_size_bpc = @intFromEnum(src_size) / 3;
-                const dst_size_bpc = @intFromEnum(size) / 3;
-                const SrcColType = std.meta.Int(.unsigned, src_size_bpc);
-                const DstColType = std.meta.Int(.unsigned, dst_size_bpc);
-                const src_cmax = std.math.maxInt(SrcColType);
-                const dst_cmax = std.math.maxInt(DstColType);
-
-                if (src_size_bpc < dst_size_bpc) {
-                    // upscaling, multiply by ratio
-                    const ratio = dst_cmax / src_cmax;
-                    return .{
-                        .r = @as(DstColType, v.r) * ratio,
-                        .g = @as(DstColType, v.g) * ratio,
-                        .b = @as(DstColType, v.b) * ratio,
-                    };
-                } else {
-                    // downscaling, divide by ratio
-                    const ratio = src_cmax / dst_cmax;
-                    return .{
-                        .r = @truncate(v.r / ratio),
-                        .g = @truncate(v.g / ratio),
-                        .b = @truncate(v.b / ratio),
-                    };
-                }
+        return switch (self) {
+            .bpp24 => |v| switch (size) {
+                .bpp24 => v,
+                .bpp36 => v.toBpp36(),
             },
-        }
+            .bpp36 => |v| switch (size) {
+                .bpp24 => v.toBpp24(),
+                .bpp36 => v,
+            },
+        };
     }
 };

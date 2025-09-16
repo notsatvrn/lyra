@@ -74,23 +74,20 @@ pub inline fn init(ptr: [*]u8, mode: *const VideoMode) Self {
 
 // PLACING CHARACTERS
 
-pub fn getPixel(self: Self, comptime part: ColorPart) u64 {
-    const color = tty.state.getColor(.{ .rgb = .bpp36 }, part);
+pub inline fn getPixel(self: Self, comptime part: ColorPart) u64 {
+    const color = tty.state.getPart(part).rgb.bpp36;
     return self.buffer.makePixel(color);
 }
 
-inline fn writeCharRow(self: *Self, pos: usize, data: u8, fg: u64, bg: u64, comptime replace: bool) void {
+fn writeCharRow(self: *Self, pos: usize, data: u8, fg: u64, bg: u64, comptime replace: bool) void {
     var offset: usize = pos;
-    switch (self.buffer.bytes) {
-        inline 2...5 => |bytes| for (0..8) |i| {
-            const bit: u3 = @truncate(7 - i);
-            const set = (data >> bit & 1) == 1;
-            if (replace) {
-                self.buffer.writePixelBytes(bytes, offset, if (set) fg else bg);
-            } else if (set) self.buffer.writePixelBytes(bytes, offset, fg);
-            offset += bytes;
-        },
-        else => unreachable,
+    for (0..8) |i| {
+        const bit: u3 = @truncate(7 - i);
+        const set = (data >> bit & 1) == 1;
+        if (replace) {
+            self.buffer.writePixel(offset, if (set) fg else bg);
+        } else if (set) self.buffer.writePixel(offset, fg);
+        offset += self.buffer.bytes;
     }
 }
 
@@ -216,7 +213,7 @@ pub inline fn clear(self: *Self) void {
 
 // MIRRORING
 
-inline fn damageFull(self: *Self) void {
+fn damageFull(self: *Self) void {
     if (self.virtual) |virtual| virtual.damage = .{
         .corner = .{ 0, 0 },
         .dimensions = .{

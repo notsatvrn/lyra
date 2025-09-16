@@ -11,7 +11,7 @@ const logger = @import("log.zig").Logger{ .name = "clock" };
 pub var init: u64 = 0;
 pub var speed: u64 = 0; // in hertz
 
-pub inline fn setup() void {
+pub fn setup() void {
     speed = tsc.counterSpeed();
     logger.info("counter speed: {}MHz", .{speed / std.time.ns_per_ms});
     init = tsc.counter();

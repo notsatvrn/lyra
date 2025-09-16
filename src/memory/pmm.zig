@@ -81,7 +81,7 @@ pub const Region = struct {
 var regions: []Region = undefined;
 var total: usize = 0;
 
-pub inline fn init() usize {
+pub fn init() usize {
     var usable: usize = 0;
 
     var largest: []u8 = "";
@@ -110,7 +110,7 @@ pub inline fn init() usize {
     }
 
     // make sure bitset space still has 64-bit alignment
-    const regions_bytes = (usable * @sizeOf(Region) + 63) / 64;
+    const regions_bytes = (usable * @sizeOf(Region) + 7) / 8;
     const info_space = regions_bytes + bitsets_size * 8;
     const info_pages = pagesNeeded(info_space, .small);
     if (info_pages * min_page_size > largest.len)

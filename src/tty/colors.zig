@@ -3,22 +3,20 @@ const std = @import("std");
 const color = @import("../gfx/color.zig");
 pub const RgbSize = color.RgbSize;
 pub const Rgb = color.Rgb;
-pub const Hsl = color.Hsl;
+const Hsl = color.Hsl;
 
-pub const Type = enum { basic, @"256", hsl, rgb };
-pub const FullType = union(Type) { basic, @"256", hsl, rgb: RgbSize };
+pub const Type = enum { basic, @"256", rgb };
+pub const FullType = union(Type) { basic, @"256", rgb: RgbSize };
 
 pub const Color = union(Type) {
     basic: Basic,
     @"256": u8,
-    hsl: Hsl,
     rgb: Rgb,
 
     pub fn TypePayload(comptime typ: Type) type {
         return switch (typ) {
             .basic => Basic,
             .@"256" => u8,
-            .hsl => Hsl,
             .rgb => Rgb,
         };
     }
@@ -27,7 +25,6 @@ pub const Color = union(Type) {
         return switch (typ) {
             .basic => Basic,
             .@"256" => u8,
-            .hsl => Hsl,
             .rgb => |v| Rgb.SizePayload(v),
         };
     }
@@ -52,21 +49,42 @@ pub const Basic = enum(u4) {
     light_magenta,
     yellow,
     white,
+
+    pub inline fn dim(self: Basic) Basic {
+        return switch (self) {
+            .light_gray => .dark_gray,
+            .dark_gray => .black,
+            .light_blue => .blue,
+            .light_green => .green,
+            .light_cyan => .cyan,
+            .light_red => .red,
+            .light_magenta => .magenta,
+            .yellow => .brown,
+            .white => .light_gray,
+            // nothing darker
+            else => self,
+        };
+    }
+
+    pub inline fn bright(self: Basic) Basic {
+        return switch (self) {
+            .black => .dark_gray,
+            .dark_gray => .light_gray,
+            .blue => .light_blue,
+            .green => .light_green,
+            .cyan => .light_cyan,
+            .red => .light_red,
+            .magenta => .light_magenta,
+            .brown => .yellow,
+            // nothing brighter
+            else => self,
+        };
+    }
 };
 
 // PALETTE
 
 const Rgb24 = Rgb.Bpp24;
-
-fn buildDimPalette(comptime len: usize, in: [len]Rgb24) [len]Rgb24 {
-    @setEvalBranchQuota(10000);
-    var out = in;
-    for (out, 0..) |c, i| {
-        const hsl = (Rgb{ .bpp24 = c }).toHsl();
-        out[i] = Rgb.fromHsl(hsl.dim()).getSize(.bpp24);
-    }
-    return out;
-}
 
 // https://int10h.org/blog/2022/06/ibm-5153-color-true-cga-palette/
 // using the canonical palette to fit in with emulators
@@ -90,8 +108,6 @@ pub const palette16: [16]Rgb24 = .{
     Rgb24.fromHex(0xFFFFFF), // white
 };
 
-pub const dim_palette16 = buildDimPalette(16, palette16);
-
 // upper part of the 256-color palette
 // should not be modified in any mode
 pub const palette240 = blk: {
@@ -110,41 +126,27 @@ pub const palette240 = blk: {
     break :blk out;
 };
 
-pub const dim_palette240 = buildDimPalette(240, palette240);
+// INTER-PALETTE MAPPING
 
-// PALETTE HANDLER
+/// Used in VGA text mode because 256-color is not available.
+pub const map_240_16 = blk: {
+    var out: [240]Basic = undefined;
+    for (0..240) |i| {
+        const hsl = palette240[i].toBpp36().toHsl();
+        out[i] = hslClosestBasic(hsl);
+    }
+    break :blk out;
+};
 
-const Effects = @import("effects.zig").Effects;
-
-// how similar are these colors?
-inline fn compareHsl(self: Hsl, other: Hsl) f64 {
-    const h = 1 - @abs(other.h - self.h);
-    const s = 1 - @abs(other.s - self.s);
-    const l = 1 - @abs(other.l - self.l);
-
-    // importance: hue, lightness, saturation
-    return h * 0.45 + s * 0.20 + l * 0.35;
-}
-
-// iterate through the static color palette and pick the closest one
-pub fn hslToStatic(hsl: Hsl, palettes: *const Palettes, comptime upper: bool) if (upper) u8 else Basic {
-    var closest: u8 = 0;
+inline fn hslClosestBasic(hsl: Hsl) Basic {
+    @setEvalBranchQuota(100000);
+    var closest: Basic = .black;
     var closest_score: f64 = 0.0;
 
-    for (palettes.current16(), 0..) |rgb, i| {
-        const score = compareHsl(hsl, rgb.toGeneric().toHsl());
+    for (0..16) |i| {
+        const score = hsl.compare(palette16[i].toBpp36().toHsl());
         if (score > closest_score) {
-            closest = i;
-            closest_score = score;
-        }
-    }
-
-    if (!upper) return @enumFromInt(closest);
-
-    for (palettes.current240(), 0..) |rgb, i| {
-        const score = compareHsl(hsl, rgb.toGeneric().toHsl());
-        if (score > closest_score) {
-            closest = i + 16;
+            closest = @enumFromInt(i);
             closest_score = score;
         }
     }
@@ -152,58 +154,13 @@ pub fn hslToStatic(hsl: Hsl, palettes: *const Palettes, comptime upper: bool) if
     return closest;
 }
 
-pub const Palettes = struct {
-    effects: *Effects = undefined,
-    // only 4-bit colors are mutable
-    regular: [16]Rgb24 = palette16,
-    dim: [16]Rgb24 = dim_palette16,
-
-    pub inline fn current16(self: *const Palettes) *const [16]Rgb24 {
-        return if (self.effects.get(.dim)) &self.dim else &self.regular;
-    }
-
-    pub inline fn current240(self: Palettes) *const [240]Rgb24 {
-        return if (self.effects.get(.dim)) &dim_palette240 else &palette240;
-    }
-
-    pub inline fn convert(
-        self: *const Palettes,
-        comptime typ: Type,
-        col: Color,
-    ) Color.TypePayload(typ) {
-        return switch (col) {
-            .basic => |v| switch (typ) {
-                .basic => v,
-                .@"256" => @intFromEnum(v),
-                .hsl => self.current16()[@intFromEnum(v)].toGeneric().toHsl(),
-                .rgb => self.current16()[@intFromEnum(v)].toGeneric(),
-            },
-
-            .@"256" => |v| if (v < 16) switch (typ) {
-                .@"256" => v,
-                .basic => @enumFromInt(v),
-                .hsl => self.current16()[v].toGeneric().toHsl(),
-                .rgb => self.current16()[v].toGeneric(),
-            } else switch (typ) {
-                .@"256" => v,
-                .basic => hslToStatic(self.current240()[v - 16].toGeneric().toHsl(), self, false),
-                .hsl => self.current240()[v - 16].toGeneric().toHsl(),
-                .rgb => self.current240()[v - 16].toGeneric(),
-            },
-
-            .hsl => |v| switch (typ) {
-                .hsl => v,
-                .basic => hslToStatic(v, self, false),
-                .@"256" => hslToStatic(v, self, true),
-                .rgb => Rgb.fromHsl(v),
-            },
-
-            .rgb => |v| switch (typ) {
-                .rgb => v,
-                .basic => hslToStatic(v.toHsl(), self, false),
-                .@"256" => hslToStatic(v.toHsl(), self, true),
-                .hsl => v.toHsl(),
-            },
-        };
-    }
-};
+pub fn closestBasic(c: Color) Basic {
+    return switch (c) {
+        .basic => |v| v,
+        .@"256" => |v| if (v < 16)
+            @enumFromInt(v)
+        else
+            map_240_16[v - 16],
+        .rgb => |v| hslClosestBasic(v.toHsl()),
+    };
+}

@@ -3,6 +3,7 @@ const std = @import("std");
 const tty = @import("../tty.zig");
 const io = @import("../io.zig");
 const Color = @import("colors.zig").Basic;
+const state = &tty.state;
 
 // STATE / INITIALIZATION
 
@@ -13,10 +14,6 @@ const size = width * height;
 const buffer = @as([*]Entry, @ptrFromInt(0xB8000))[0..size];
 
 pos: u16 = 0,
-
-foreground: Color = .light_gray,
-background: Color = .black,
-
 cursor: bool = true,
 
 const Self = @This();
@@ -28,11 +25,11 @@ const Entry = packed struct {
     foreground: Color,
     background: Color,
 
-    pub inline fn fromChar(state: *const Self, char: u8) Entry {
+    pub inline fn fromChar(char: u8) Entry {
         return .{
             .char = char,
-            .foreground = state.foreground,
-            .background = state.background,
+            .foreground = state.getPart(.foreground).basic,
+            .background = state.getPart(.background).basic,
         };
     }
 };
@@ -46,10 +43,10 @@ inline fn put(self: *Self, char: u8) void {
         // BS / DEL
         '\x08', '\x7F' => if (self.pos > 0) {
             self.pos -= 1;
-            buffer[self.pos] = Entry.fromChar(self, ' ');
+            buffer[self.pos] = Entry.fromChar(' ');
         },
         else => {
-            buffer[self.pos] = Entry.fromChar(self, char);
+            buffer[self.pos] = Entry.fromChar(char);
             self.pos += 1;
             if (self.pos >= size) self.scroll();
         },
@@ -65,11 +62,16 @@ inline fn updateCursor(self: Self) void {
     io.out(u8, 0x3D5, @truncate(self.pos >> 8));
 }
 
+pub fn toggleCursor(self: *Self) void {
+    self.cursor = !self.cursor;
+    if (self.cursor) self.updateCursor();
+}
+
 inline fn scroll(self: *Self) void {
     // Copy buffer data starting from the second line to the start.
     std.mem.copyForwards(Entry, buffer[0 .. size - width], buffer[width..]);
     // Clear the last line.
-    @memset(buffer[size - width ..], Entry.fromChar(self, ' '));
+    @memset(buffer[size - width ..], Entry.fromChar(' '));
     // Move cursor position up a row.
     self.pos -= width;
     // Update cursor.
@@ -82,6 +84,7 @@ pub fn print(self: *Self, string: []const u8) void {
 }
 
 pub inline fn clear(self: *Self) void {
-    @memset(buffer, Entry.fromChar(self, ' '));
+    @memset(buffer, Entry.fromChar(' '));
     self.pos = 0;
+    self.updateCursor();
 }
