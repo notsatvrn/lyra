@@ -4,8 +4,8 @@
     .fingerprint = 0x2c288ec2669c1edf,
     .dependencies = .{
         .utils = .{
-            .url = "git+https://github.com/notsatvrn/zig-utils#4ea26b7db90930e83c308d9327197f2dd935da62",
-            .hash = "utils-0.0.0-mXwaHrmaAAD2ydWvRAaMUtq84oVyhZFkCkUH7PTFw-Tm",
+            .url = "git+https://github.com/notsatvrn/zig-utils#349d3c38b54ccae985124c5106fe436a87932b57",
+            .hash = "utils-0.0.0-mXwaHraaAABZU5Cj0LT0VoSDAOyjPbFOLkb6mV0oeoDg",
         },
     },
     .paths = .{

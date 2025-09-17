@@ -11,21 +11,25 @@ pub const ManagedPageTable = @import("ManagedPageTable.zig");
 /// Kernel virtual memory structures.
 pub const kernel = struct {
     const smp = @import("../smp.zig");
-    const Storage = smp.LocalStorage;
+    const Tables = smp.LocalStorage(ManagedPageTable);
+    const Offsets = smp.LocalStorage(usize);
+    const limine = @import("../limine.zig");
+
     const logger = @import("../log.zig").Logger{ .name = "vmm/kernel" };
 
-    pub var tables: Storage(ManagedPageTable) = undefined;
-    pub var offsets: Storage(usize) = undefined;
+    pub var tables: Tables = undefined;
+    pub var offsets: Offsets = undefined;
 
     pub fn init(offset: usize) void {
-        tables = Storage(ManagedPageTable).init(memory.allocator) catch unreachable;
+        // 16MiB minimum memory requirement, should never OOM
+        tables = Tables.init(memory.allocator) catch unreachable;
+        offsets = Offsets.init(memory.allocator) catch unreachable;
         for (tables.objects) |*t| t.load();
-        offsets = Storage(usize).init(memory.allocator) catch unreachable;
         for (offsets.objects) |*o| o.* = offset;
     }
 
     /// Picks a spot in memory after the kernel to map in. Uses small pages.
-    pub fn mapIo(phys: usize, len: usize, flags: ManagedPageTable.Entry) usize {
+    pub fn mapSimple(phys: usize, len: usize, flags: ManagedPageTable.Entry) usize {
         const offset = offsets.get();
         // align offset to a page
         offset.* = (offset.* + 0xFFF) & ~@as(usize, 0xFFF);
@@ -34,21 +38,47 @@ pub const kernel = struct {
         map(phys, virt, len, .small, flags);
         // move the offset by a page
         offset.* += (len + 0xFFF) & ~@as(usize, 0xFFF);
+        // set the new offset if pre-smp
+        if (!smp.launched) {
+            @branchHint(.unlikely);
+            for (1..limine.cpus.response.count) |cpu|
+                offsets.objects[cpu] = offset.*;
+        }
 
         return virt;
     }
 
     pub fn map(phys: usize, virt: usize, len: usize, size: memory.PageSize, flags: ManagedPageTable.Entry) void {
-        const table = tables.get();
-        table.map(phys, virt, len, size, flags) catch
-            logger.panic("map failed on cpu {}", .{smp.getCpu()});
-        table.store();
+        if (smp.launched) {
+            @branchHint(.likely);
+            return mapCpu(smp.getCpu(), phys, virt, len, size, flags);
+        }
+        for (0..limine.cpus.response.count) |cpu|
+            mapCpu(cpu, phys, virt, len, size, flags);
     }
 
     pub fn unmap(virt: usize, len: usize, size: memory.PageSize) void {
-        const table = tables.get();
+        if (smp.launched) {
+            @branchHint(.likely);
+            return unmapCpu(smp.getCpu(), virt, len, size);
+        }
+        for (0..limine.cpus.response.count) |cpu|
+            unmapCpu(cpu, virt, len, size);
+    }
+
+    // CPU-SPECIFIC MAPPING
+
+    inline fn mapCpu(cpu: usize, phys: usize, virt: usize, len: usize, size: memory.PageSize, flags: ManagedPageTable.Entry) void {
+        const table = &tables.objects[cpu];
+        table.map(phys, virt, len, size, flags) catch
+            logger.panic("map failed on cpu {}", .{cpu});
+        table.store();
+    }
+
+    inline fn unmapCpu(cpu: usize, virt: usize, len: usize, size: memory.PageSize) void {
+        const table = &tables.objects[cpu];
         table.unmap(virt, len, size) catch
-            logger.panic("unmap failed on cpu {}", .{smp.getCpu()});
+            logger.panic("unmap failed on cpu {}", .{cpu});
         table.store();
     }
 };

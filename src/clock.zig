@@ -1,9 +1,9 @@
 const std = @import("std");
-const tsc = @import("clock/tsc.zig");
-const hpet = @import("clock/hpet.zig");
-const acpi = @import("clock/acpi.zig");
-const rtc = @import("clock/rtc.zig");
 const cpuid = @import("cpuid.zig");
+
+pub const tsc = @import("clock/tsc.zig");
+pub const hpet = @import("clock/hpet.zig");
+pub const rtc = @import("clock/rtc.zig");
 
 const logger = @import("log.zig").Logger{ .name = "clock" };
 
@@ -12,7 +12,6 @@ const logger = @import("log.zig").Logger{ .name = "clock" };
 pub const Source = enum {
     tsc, // https://wiki.osdev.org/TSC
     hpet, // https://wiki.osdev.org/HPET
-    acpi, // https://wiki.osdev.org/ACPI_Timer
 };
 
 pub var start: u64 = 0;
@@ -28,9 +27,6 @@ pub fn init() void {
         speed = hpet.counterSpeed();
         start = hpet.counter();
         source = .hpet;
-    } else if (acpi.check()) {
-        // TODO: implement acpi clocksource
-        logger.panic("acpi clocksource unimplemented", .{});
     } else logger.panic("no clocksource available", .{});
 
     logger.info("using {s} as source", .{@tagName(source)});
@@ -46,7 +42,6 @@ pub fn counter() usize {
     return switch (source) {
         .tsc => tsc.counter(),
         .hpet => hpet.counter(),
-        else => unreachable,
     };
 }
 

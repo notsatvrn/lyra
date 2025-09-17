@@ -87,17 +87,11 @@ const Tss = packed struct {
     iomap_base: u16,
 };
 
-// Task State Segment descriptor.
-// Fills two regular segment descriptors.
-const TssDescriptor = packed struct {
-    limit_lo: u16,
-    base_lo: u16,
-    base_mid: u8,
-    access: Access,
-    limit_hi: u4,
-    flags: Flags,
-    base_hi: u40,
-    unused: u32 = 0,
+// 64-bit segment descriptor extension.
+// Goes after a normal segment descriptor.
+const DescriptorExtension = packed struct(u64) {
+    base: u32,
+    reserved: u32,
 };
 
 // TABLE DATA
@@ -151,23 +145,28 @@ pub fn update(cpus: usize) !void {
 // Write the initial state for a Task State Segment.
 pub fn writeTSS(tss: *Tss, offset: usize) void {
     const selector = @intFromEnum(SegmentSelector.tss) / @sizeOf(SegmentDescriptor);
-    var tss_desc: *TssDescriptor = @ptrCast(@alignCast(&gdt[selector + (offset * 2)]));
+    var tss_segment: *SegmentDescriptor = &gdt[selector + (offset * 2)];
+    var tss_extension: *DescriptorExtension = @ptrCast(&gdt[selector + (offset * 2) + 1]);
 
     const base = @intFromPtr(tss);
     const limit = @sizeOf(Tss) - 1;
 
-    tss_desc.base_lo = @truncate(base);
-    tss_desc.base_hi = @truncate(base >> 24);
-    tss_desc.limit_lo = limit & 0xFFFF;
-    tss_desc.limit_hi = limit >> 16;
+    tss_segment.base_lo = @truncate(base);
+    tss_segment.base_hi = @truncate(base >> 24);
+    tss_segment.limit_lo = limit & 0xFFFF;
+    tss_segment.limit_hi = limit >> 16;
 
-    tss_desc.access = .{
+    tss_segment.access = .{
         .accessed = true,
         .mutable = false,
         .type = .code,
         .regular = false,
         .level = .kernel,
     };
+    tss_segment.flags = .{};
+
+    tss_extension.base = @truncate(base >> 32);
+    tss_extension.reserved = 0;
 }
 
 // Load the current Global Descriptor Table.
@@ -205,7 +204,7 @@ pub inline fn load(tss: usize) void {
 
     // Set the Task Register.
     const start = @intFromEnum(SegmentSelector.tss);
-    const val = start + (tss * @sizeOf(TssDescriptor));
+    const val = start + (tss * @sizeOf(SegmentDescriptor) * 2);
     asm volatile ("ltr %[selector]"
         :
         // we have to truncate b/c ltr takes r/m16
@@ -217,5 +216,5 @@ pub inline fn load(tss: usize) void {
 pub inline fn str() usize {
     return (asm volatile ("str %[tr]"
         : [tr] "=r" (-> usize),
-    ) - @intFromEnum(SegmentSelector.tss)) / @sizeOf(TssDescriptor);
+    ) - @intFromEnum(SegmentSelector.tss)) / (@sizeOf(SegmentDescriptor) * 2);
 }

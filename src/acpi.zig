@@ -25,7 +25,7 @@ const Entry = vmm.ManagedPageTable.Entry;
 const map_flags = Entry{ .writable = true };
 
 export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(.c) ?*anyopaque {
-    return @ptrFromInt(vmm.kernel.mapIo(phys, len, map_flags));
+    return @ptrFromInt(vmm.kernel.mapSimple(phys, len, map_flags));
 }
 export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.c) void {
     vmm.kernel.unmap(@intFromPtr(virt), len, .small);

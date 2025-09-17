@@ -107,7 +107,7 @@ pub fn init() void {
     }
 
     // make sure bitset space still has 64-bit alignment
-    const regions_bytes = (usable * @sizeOf(Region) + 7) / 8;
+    const regions_bytes = (usable * @sizeOf(Region) + 7) & ~@as(usize, 7);
     const info_space = regions_bytes + bitsets_size * 8;
     const info_pages = pagesNeeded(info_space, .small);
     if (info_pages * min_page_size > largest.len)

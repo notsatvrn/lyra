@@ -51,10 +51,11 @@ export fn stage1() noreturn {
     util.disableInterrupts();
     pci.init();
 
-    smp.init(stage2);
+    smp.launch(stage2);
 }
 
 fn stage2() noreturn {
+    memory.vmm.kernel.tables.get().load();
     while (true) util.wfi();
 }
 

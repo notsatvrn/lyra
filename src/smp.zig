@@ -8,7 +8,9 @@ const logger = @import("log.zig").Logger{ .name = "smp" };
 const gdt = @import("gdt.zig");
 const isr = @import("int/isr.zig");
 
-pub fn init(comptime entry: fn () noreturn) noreturn {
+pub var launched = false;
+
+pub fn launch(comptime entry: fn () noreturn) noreturn {
     const cpus = limine.cpus.response;
     const cpu0 = cpus.cpus[0];
 
@@ -27,6 +29,7 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
         }
     };
 
+    launched = true;
     for (1..cpus.count) |i| {
         const cpu = cpus.cpus[i];
         cpu.extra = i;
@@ -34,6 +37,7 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
     }
 
     cpu0.extra = 0;
+    gdt.load(0);
     entry();
 }
 
@@ -89,6 +93,7 @@ pub fn LockingStorage(comptime T: type) type {
 
         const Entry = struct {
             lock: Lock = .{},
+            dirty: bool = false,
             value: T,
         };
 
@@ -119,6 +124,11 @@ pub fn LockingStorage(comptime T: type) type {
 
         pub inline fn lock(self: *Self) *T {
             return self.lockCpu(getCpu());
+        }
+
+        pub inline fn isDirty(object: *T) bool {
+            const entry: *Entry = @fieldParentPtr("value", object);
+            return entry.dirty;
         }
 
         // UNLOCKING

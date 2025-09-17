@@ -12,7 +12,11 @@ pub const DeviceDescriptor = packed struct(u32) { vendor: u16, device: u16 };
 pub const DeviceInfo = struct { desc: DeviceDescriptor, class: Class };
 
 fn cmpLoc(a: DeviceLocation, b: DeviceLocation) std.math.Order {
-    return std.math.order(@as(u16, @bitCast(a)), @as(u16, @bitCast(b)));
+    const bus_order = std.math.order(a.bus, b.bus);
+    if (bus_order != .eq) return bus_order;
+    const slot_order = std.math.order(a.slot, b.slot);
+    if (slot_order != .eq) return slot_order;
+    return std.math.order(a.func, b.func);
 }
 
 // use an AVL tree map to store devices, benefits from fast search and small size

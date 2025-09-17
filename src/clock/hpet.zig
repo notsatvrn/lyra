@@ -35,9 +35,10 @@ pub inline fn check() bool {
     const status = acpi.c.uacpi_table_find_by_signature(acpi.c.ACPI_HPET_SIGNATURE, @ptrCast(&uacpi_table));
     if (status != acpi.c.UACPI_STATUS_OK or uacpi_table.ptr == null) return false;
 
-    const table: *acpi.Hpet = @ptrCast(@alignCast(uacpi_table.ptr.?));
-    const size = 0xF8 + (0x20 * table.timers());
-    mapped = memory.vmm.kernel.mapIo(table.address.address, size, .{ .writable = true }) + (table.address.address & 0xFFF);
+    const addr = @as(*const acpi.Hpet, @ptrCast(@alignCast(uacpi_table.ptr.?))).address.address;
+    // the HPET address is expected to be 4KiB boundary aligned, and the region is 1KiB
+    mapped = memory.vmm.kernel.mapSimple(addr, 1024, .{ .writable = true });
+
     const basics = io.memIn(CapIdReg, mapped);
     return (basics.period > 0) and (basics.period <= 0x05F5E100) and basics.long_mode;
 }
