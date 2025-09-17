@@ -31,8 +31,13 @@ inline fn pitHandler(_: *int.InterruptStack) void {
     pit_ints += 1;
 }
 
-fn pitTimerReading() usize {
-    const int_goal = 8;
+const logger = @import("../log.zig").Logger{ .name = "bruh" };
+
+const int_goal = 8; // wait until 8 interrupts before reading
+
+pub fn counterSpeed() u64 {
+    int.registerIRQ(0, pitHandler);
+    pit.setDivisor(pit.max_divisor);
 
     // first reading - short
     const first = pit_ints;
@@ -49,37 +54,8 @@ fn pitTimerReading() usize {
     }
     const end = last_reading;
 
-    return (end - start) / int_goal;
-}
+    int.registerIRQ(0, null);
 
-const cycle_goal = 0.005; // consistency goal of 0.5%
-
-pub fn counterSpeed() u64 {
-    pit.setDivisor(pit.max_divisor);
-
-    int.registerIRQ(0, pitHandler, false);
-
-    // reread until the difference is tiny
-    var cycles = pitTimerReading();
-    while (true) {
-        const second = pitTimerReading();
-
-        const avg = @divFloor(cycles + second, 2);
-        const first_i: isize = @intCast(cycles);
-        const second_i: isize = @intCast(second);
-        const diff = @abs(first_i - second_i);
-
-        const avg_f: f64 = @floatFromInt(avg);
-        const diff_f: f64 = @floatFromInt(diff);
-        if (diff_f / avg_f < cycle_goal) {
-            // difference reached our goal
-            // use the average of the results
-            cycles = avg;
-            break;
-        } else cycles = second;
-    }
-
-    int.registerIRQ(0, null, false);
-
+    const cycles = (end - start) / int_goal;
     return cycles * pit.min_hz;
 }

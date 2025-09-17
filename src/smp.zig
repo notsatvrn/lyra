@@ -12,8 +12,7 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
     const cpus = limine.cpus.response;
     const cpu0 = cpus.cpus[0];
 
-    // not sure if this can happen, but if it does
-    // i don't want to deal with it at the moment
+    // not sure if this can happen, but we don't want to deal with it right now
     if (cpu0.id != cpus.bsp_id) logger.panic("cpu 0 id != bootstrap id", .{});
     // 16MiB minimum memory requirement, should never OOM
     gdt.update(cpus.count) catch unreachable;
@@ -35,7 +34,6 @@ pub fn init(comptime entry: fn () noreturn) noreturn {
     }
 
     cpu0.extra = 0;
-    gdt.load(0);
     entry();
 }
 

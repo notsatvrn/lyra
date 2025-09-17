@@ -57,6 +57,12 @@ pub inline fn remapPIC(offset1: u8, offset2: u8) void {
     io.out(u8, PIC2_DATA, a2);
 }
 
+pub inline fn disablePIC() void {
+    // mask all interrupts
+    io.out(u8, PIC1_DATA, 0xFF);
+    io.out(u8, PIC2_DATA, 0xFF);
+}
+
 // INTERRUPT HANDLERS
 
 /// Number of CPU exceptions.
@@ -147,37 +153,25 @@ pub inline fn register(n: u8, handler: ?Handler) void {
     handlers[n] = if (handler) |h| &h else unhandled;
 }
 
-// Build a wrapper to provide masking during execution (if needed) and EOI afterwards.
-fn wrapIRQ(handler: IRQHandler, comptime mask: bool) Handler {
-    const wrappers = struct {
-        fn wrappedMasking(stack: *InterruptStack) callconv(.c) void {
-            const i: u4 = @truncate(stack.interrupt_number - IRQ_0);
-            maskIRQ(i, true);
-            handler(stack);
-            maskIRQ(i, false);
-            signalPIC(i);
-        }
-
-        // non-masking version for timers and such
-        // masking before handling introduces inconsistency
-        fn wrapped(stack: *InterruptStack) callconv(.c) void {
-            handler(stack);
-            signalPIC(@truncate(stack.interrupt_number - IRQ_0));
-        }
-    };
-
-    return if (mask) wrappers.wrappedMasking else wrappers.wrapped;
-}
-
 /// Register an IRQ handler.
 ///
 /// Parameters:
 ///     irq: Index of the IRQ.
 ///     handler: IRQ handler.
 ///     mask: Mask during execution?
-pub fn registerIRQ(irq: u4, handler: ?IRQHandler, comptime mask: bool) void {
+pub fn registerIRQ(irq: u4, handler: ?IRQHandler) void {
     if (handler) |h| {
-        handlers[IRQ_0 + @as(u8, irq)] = wrapIRQ(h, mask);
+        const wrapper = struct {
+            fn wrapped(stack: *InterruptStack) callconv(.c) void {
+                const i: u4 = @truncate(stack.interrupt_number - IRQ_0);
+                maskIRQ(i, true);
+                h(stack);
+                maskIRQ(i, false);
+                signalPIC(i);
+            }
+        };
+
+        handlers[IRQ_0 + @as(u8, irq)] = wrapper.wrapped;
         maskIRQ(irq, false);
     } else {
         maskIRQ(irq, true);
@@ -196,7 +190,7 @@ pub fn maskIRQ(irq: u4, mask: bool) void {
     const old = io.in(u8, port); // Retrieve the current mask.
 
     // Mask or unmask the interrupt.
-    const shift: u3 = @truncate(if (irq < 8) irq else irq - 8);
+    const shift: u3 = @truncate(irq % 8);
     if (mask) {
         io.out(u8, port, old | (@as(u8, 1) << shift));
     } else {

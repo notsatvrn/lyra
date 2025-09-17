@@ -15,3 +15,9 @@ pub inline fn setDivisor(divisor: u16) void {
     io.out(u8, 0x40, @truncate(divisor));
     io.out(u8, 0x40, @truncate(divisor >> 8));
 }
+
+pub inline fn disable() void {
+    io.out(u8, 0x40, 0b00110000);
+    io.out(u8, 0x40, 0);
+    io.out(u8, 0x40, 0);
+}

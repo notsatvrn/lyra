@@ -134,7 +134,7 @@ pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usiz
     var phys = p;
     var start = s;
     // round start up to nearest entry_bytes for end
-    var end = (s + entry_bytes) & ~(entry_bytes - 1);
+    var end = (s + entry_bytes - 1) & ~(entry_bytes - 1);
     // don't go past e
     end = @min(e, end);
 

@@ -23,6 +23,7 @@ export fn stage1() noreturn {
     gdt.init();
     int.idt.init();
     int.isr.storeStack();
+    int.remapPIC(32, 40);
 
     tty.init();
 
@@ -34,34 +35,27 @@ export fn stage1() noreturn {
     logger.info("identify processor...", .{});
     cpuid.identify();
     logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
-    if (!cpuid.features.invariant_tsc)
-        logger.panic("- invariant TSC not supported!", .{});
     if (cpuid.features.x2apic)
         logger.info("- x2apic is supported", .{});
 
-    memory.vmm.kernel.mmio_start = memory.pmm.init();
-    memory.vmm.kernel.page_table.load();
+    memory.pmm.init();
+    const kfile = limine.kfile.response.file;
+    memory.vmm.kernel.init(kfile.address + kfile.size);
     memory.ready = true;
 
     tty.initDoubleBuffering();
 
-    int.remapPIC(32, 40);
-    util.enablePICInterrupts();
-    util.enableInterrupts();
-    clock.setup();
     acpi.init();
+    util.enableInterrupts();
+    clock.init();
+    util.disableInterrupts();
+    pci.init();
 
     smp.init(stage2);
 }
 
 fn stage2() noreturn {
-    if (smp.getCpu() == 0) continued();
     while (true) util.wfi();
-}
-
-fn continued() void {
-    pci.detect();
-    pci.print();
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS

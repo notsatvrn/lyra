@@ -14,12 +14,15 @@ Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.or
   - [x] paging
     - [x] read
     - [x] write
-  - [x] system clock
-    - [x] counter
+  - [ ] system clock
+    - [ ] counter
+      - [x] invariant TSC
+      - [x] HPET
+      - [ ] ACPI PM timer
     - [x] hw clock reading
   - [ ] interrupts
-    - [x] basic handlers
-    - [ ] lapic driver
+    - [x] pic driver
+    - [ ] apic driver
   - [ ] smp
     - [x] core id storage
   - [x] pci device tree

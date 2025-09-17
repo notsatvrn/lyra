@@ -31,11 +31,22 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
 
         const Self = @This();
 
+        // DEINIT
+
+        pub fn deinit(self: *Self) void {
+            for (self.bins.items) |*bin| {
+                allocator.free(@as([*]T, @ptrCast(bin.objects))[0..]);
+                bin.used_set.deinit(allocator);
+            }
+            self.bins.deinit(allocator);
+            self.* = undefined;
+        }
+
         // WHOLE BIN OPERATIONS
 
         inline fn addBin(self: *Self, n: usize) !void {
             const objects = try allocator.alloc(T, obj_count);
-            var used_set = try UsedSet.allocate(allocator, obj_size);
+            var used_set = try UsedSet.init(allocator, obj_size);
             _ = used_set.claimRangeFast(n);
 
             try self.bins.append(allocator, .{

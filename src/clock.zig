@@ -1,35 +1,64 @@
 const std = @import("std");
 const tsc = @import("clock/tsc.zig");
+const hpet = @import("clock/hpet.zig");
+const acpi = @import("clock/acpi.zig");
 const rtc = @import("clock/rtc.zig");
+const cpuid = @import("cpuid.zig");
 
 const logger = @import("log.zig").Logger{ .name = "clock" };
 
 // COUNTER-BASED CLOCK
-// https://wiki.osdev.org/TSC
-// https://wiki.osdev.org/HPET (fallback in the future)
 
-pub var init: u64 = 0;
+pub const Source = enum {
+    tsc, // https://wiki.osdev.org/TSC
+    hpet, // https://wiki.osdev.org/HPET
+    acpi, // https://wiki.osdev.org/ACPI_Timer
+};
+
+pub var start: u64 = 0;
 pub var speed: u64 = 0; // in hertz
+pub var source: Source = undefined;
 
-pub fn setup() void {
-    speed = tsc.counterSpeed();
-    logger.info("counter speed: {}MHz", .{speed / std.time.ns_per_ms});
-    init = tsc.counter();
+pub fn init() void {
+    if (cpuid.features.invariant_tsc) {
+        speed = tsc.counterSpeed();
+        start = tsc.counter();
+        source = .tsc;
+    } else if (hpet.check()) {
+        speed = hpet.counterSpeed();
+        start = hpet.counter();
+        source = .hpet;
+    } else if (acpi.check()) {
+        // TODO: implement acpi clocksource
+        logger.panic("acpi clocksource unimplemented", .{});
+    } else logger.panic("no clocksource available", .{});
+
+    logger.info("using {s} as source", .{@tagName(source)});
+    const mhz = @as(f64, @floatFromInt(speed)) / std.time.ns_per_ms;
+    logger.info("counter speed: {d:.3}MHz", .{mhz});
     // counts per microsecond for stall power consumption hack
     us_counts = countsPerNanos(std.time.ns_per_us);
     setupClock(rtc.read());
     logger.info("timestamp: {}", .{timestamp()});
 }
 
+pub fn counter() usize {
+    return switch (source) {
+        .tsc => tsc.counter(),
+        .hpet => hpet.counter(),
+        else => unreachable,
+    };
+}
+
 inline fn nanoSinceCount(count: u64) u64 {
-    const count_diff = @as(u128, tsc.counter() - count) * std.time.ns_per_s;
+    const count_diff = @as(u128, counter() - count) * std.time.ns_per_s;
     return @truncate(count_diff / @as(u128, speed));
 }
 
 // get nanoseconds since we first read counter
 pub fn nanoSinceBoot() u64 {
     if (speed == 0) return 0;
-    return nanoSinceCount(init);
+    return nanoSinceCount(start);
 }
 
 // REAL TIME CLOCK (RTC)
@@ -48,7 +77,7 @@ var clock_state: ?ClockState = null;
 pub inline fn setupClock(base: u64) void {
     if (base != 0) clock_state = .{
         .base_init = base,
-        .count_init = tsc.counter(),
+        .count_init = counter(),
     };
 }
 
@@ -72,17 +101,16 @@ var us_counts: usize = 0;
 // busy-wait for n nanoseconds
 // ideal for smaller waits
 pub fn stall(n: usize) void {
-    const start = tsc.counter();
-    const goal = start + countsPerNanos(n);
+    const goal = counter() + countsPerNanos(n);
 
     // improve power consumption on longer stalls
     // loop hint puts the CPU to sleep for a bit
     // should be accurate to about a microsec
     if (n > std.time.ns_per_us) {
         const ugoal = goal - us_counts;
-        while (ugoal > tsc.counter())
+        while (ugoal > counter())
             std.atomic.spinLoopHint();
     }
 
-    while (goal > tsc.counter()) {}
+    while (goal > counter()) {}
 }

@@ -13,20 +13,6 @@ pub fn halt() noreturn {
     while (true) asm volatile ("hlt");
 }
 
-pub inline fn disablePICInterrupts() void {
-    io.out(u8, 0xA1, 0xFF);
-    delay();
-    io.out(u8, 0x21, 0xFB);
-    delay();
-}
-
-pub inline fn enablePICInterrupts() void {
-    io.out(u8, 0xA1, 0xFF);
-    delay();
-    io.out(u8, 0x21, 0xFB);
-    delay();
-}
-
 pub inline fn disableInterrupts() void {
     asm volatile ("cli");
     // non-maskable interrupts

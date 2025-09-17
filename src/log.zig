@@ -31,8 +31,10 @@ fn write(_: void, bytes: []const u8) WriteError!usize {
 const writer = std.Io.GenericWriter(void, WriteError, write){ .context = void{} };
 
 fn printRaw(comptime fmt: []const u8, args: anytype) !void {
-    const sec = @as(f64, @floatFromInt(nanoSinceBoot())) / std.time.ns_per_s;
-    try writer.print("{f}[{d: >12.6}] " ++ fmt ++ "\n", .{ Ansi.reset, sec } ++ args);
+    const time = nanoSinceBoot() / std.time.ns_per_us;
+    const micros = time % std.time.us_per_s;
+    const secs = time / std.time.us_per_s;
+    try writer.print("{f}[{d: >5}.{d:0>6}] " ++ fmt ++ "\n", .{ Ansi.reset, secs, micros } ++ args);
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {

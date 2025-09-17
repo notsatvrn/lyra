@@ -217,8 +217,8 @@ fn damageFull(self: *Self) void {
     if (self.virtual) |virtual| virtual.damage = .{
         .corner = .{ 0, 0 },
         .dimensions = .{
-            self.info.cols * 16,
-            self.info.rows * 8,
+            self.info.cols * 8,
+            self.info.rows * 16,
         },
     };
 }

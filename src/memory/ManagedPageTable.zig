@@ -23,7 +23,7 @@ pub inline fn init() !Self {
 
 pub inline fn deinit(self: *Self) void {
     self.unmap(0, std.math.maxInt(usize), .large);
-    self.pool.destroy(self.top);
+    self.pool.deinit();
     self.* = undefined;
 }
 
@@ -56,19 +56,18 @@ pub fn unmap(self: *Self, virt: usize, len: usize, size: Size) !void {
 }
 
 inline fn mapInner(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
-    const size_bytes = size.bytes();
-    const page_mask = size_bytes - 1;
+    const size_bytes = size.bytes() - 1;
 
-    var offset = virt & page_mask;
+    var offset = virt & size_bytes;
     var phys_page: ?usize = null;
     if (phys) |addr| {
         // get offset from phys instead
-        offset = addr & page_mask;
-        phys_page = addr & ~page_mask;
+        offset = addr & size_bytes;
+        phys_page = addr & ~size_bytes;
     }
-    const virt_page = virt & ~page_mask;
+    const virt_page = virt & ~size_bytes;
     // offset + len, rounded up to a full page
-    const len_real = (offset + len + size_bytes) & ~page_mask;
+    const len_real = (offset + len + size_bytes) & ~size_bytes;
     const end = virt_page + len_real - 1;
 
     const level: u3 = @truncate(4 + limine.paging_mode.response.mode); // 1 = level 5

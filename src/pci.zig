@@ -70,12 +70,14 @@ fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
     };
 }
 
-pub inline fn detect() void {
+pub inline fn init() void {
     // 16MiB minimum memory requirement, should never OOM
-    detectBus(0) catch unreachable;
+    const num = detectBus(0) catch unreachable;
+    logger.info("found {} devices", .{num});
 }
 
-fn detectBus(bus: u8) std.mem.Allocator.Error!void {
+fn detectBus(bus: u8) std.mem.Allocator.Error!usize {
+    var num: usize = 0;
     slots: for (0..32) |slot| {
         for (0..8) |func| {
             const location = DeviceLocation{
@@ -103,13 +105,14 @@ fn detectBus(bus: u8) std.mem.Allocator.Error!void {
 
             const desc = DeviceDescriptor{ .vendor = vendor, .device = device };
             try devices.put(location, .{ .desc = desc, .class = class });
+            num += 1;
 
             const header_type = configRead(u8, location, 14);
 
             if (header_type & 0xF == 0x1) {
                 // PCI-to-PCI bridge, let's read the next bus
                 const next_bus = configRead(u8, location, 0x19);
-                try detectBus(next_bus);
+                num += try detectBus(next_bus);
             }
 
             if (func == 0) {
@@ -118,6 +121,7 @@ fn detectBus(bus: u8) std.mem.Allocator.Error!void {
             }
         }
     }
+    return num;
 }
 
 // CLASSIFICATION

@@ -15,8 +15,12 @@ tail: usize = 0,
 
 const Self = @This();
 
-pub inline fn allocate(allocator: std.mem.Allocator, size: usize) !Self {
+pub inline fn init(allocator: std.mem.Allocator, size: usize) !Self {
     return .{ .ptr = (try allocator.alloc(u64, (size + 63) / 64)).ptr, .len = size };
+}
+
+pub inline fn deinit(self: Self, allocator: std.mem.Allocator) void {
+    allocator.free(self.ptr[0 .. (self.len + 63) / 64]);
 }
 
 // OPERATION IMPLEMENTATIONS

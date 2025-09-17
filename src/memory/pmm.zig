@@ -81,12 +81,11 @@ pub const Region = struct {
 var regions: []Region = undefined;
 var total: usize = 0;
 
-pub fn init() usize {
+pub fn init() void {
     var usable: usize = 0;
 
     var largest: []u8 = "";
     var bitsets_size: usize = 0;
-    var end: usize = 0;
 
     logger.debug("memory regions: ", .{});
     for (0..limine.mmap.response.count) |i| {
@@ -103,8 +102,6 @@ pub fn init() usize {
         entry.ptr = limine.convertPointer(entry.ptr);
         // find the largest region and put region info at the start
         if (entry.len > largest.len) largest = entry.ptr[0..entry.len];
-        // find the real end of physical memory
-        if (addr > end) end = addr + entry.len;
 
         usable += 1;
     }
@@ -164,8 +161,6 @@ pub fn init() usize {
     logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
     // let's make out-of-memory scenarios impossible for early boot stuff
     if (total < 4096) logger.panic("less than 16MiB memory available!", .{});
-    // make sure we're out of the 32-bit address space (crashes otherwise)
-    return @max(end, 4 * memory.GB) | limine.hhdm.response.offset;
 }
 
 // REGION UTILITIES
