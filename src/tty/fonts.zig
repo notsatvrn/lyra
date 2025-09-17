@@ -1,1 +1,1 @@
-pub const oldschoolPGC = @import("fonts/oldschoolPGC.zig");
+pub const oldschoolPGC = @import("fonts/oldschoolPGC.zig").data;

@@ -12,8 +12,8 @@ inline fn writeColorSGR(color: Color, writer: *std.Io.Writer, part: ColorPart) !
         .basic => |v| continue :print .{ .@"256" = @intFromEnum(v) },
         .@"256" => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), v }),
         .rgb => |v| {
-            const rgb24 = v.getSize(.bpp24);
-            const params = .{ @intFromEnum(part), rgb24.r, rgb24.g, rgb24.b };
+            const rgb = v.toBpc8();
+            const params = .{ @intFromEnum(part), rgb.r, rgb.g, rgb.b };
             return writer.print("{d};2;{d};{d};{d}", params);
         },
     };

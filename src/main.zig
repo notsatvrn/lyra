@@ -43,7 +43,7 @@ export fn stage1() noreturn {
     memory.vmm.kernel.init(kfile.address + kfile.size);
     memory.ready = true;
 
-    tty.initDoubleBuffering();
+    tty.virtualize();
 
     acpi.init();
     util.enableInterrupts();
@@ -56,7 +56,8 @@ export fn stage1() noreturn {
 
 fn stage2() noreturn {
     memory.vmm.kernel.tables.get().load();
-    while (true) util.wfi();
+    logger.debug("hello from cpu {}! halting...", .{smp.getCpu()});
+    util.halt();
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS

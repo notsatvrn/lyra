@@ -65,7 +65,7 @@ pub fn init(ptr: [*]u8, mode: *const VideoMode) Self {
 
 // WRITING PIXELS
 
-pub fn makePixel(self: Self, color: Rgb.Bpp36) u64 {
+pub fn makePixel(self: Self, color: Rgb) u64 {
     var r = @as(u64, color.r);
     var g = @as(u64, color.g);
     var b = @as(u64, color.b);
@@ -100,7 +100,7 @@ pub inline fn drawRect(self: Self, pos: usize, pixel: u64, w: usize, h: usize) v
     for (0..h) |i| self.writePixelNTimes(pos + (self.mode.pitch * i), pixel, w);
 }
 
-pub inline fn writeColor(self: Self, pos: usize, color: Rgb.Bpp36) void {
+pub inline fn writeColor(self: Self, pos: usize, color: Rgb) void {
     self.writePixel(pos, self.makePixel(color));
 }
 
@@ -110,7 +110,7 @@ pub inline fn clear(self: Self) void {
 
 // READING PIXELS
 
-pub fn readColor(self: Self, pos: usize) Rgb.Bpp36 {
+pub fn readColor(self: Self, pos: usize) Rgb {
     var pixel: u64 = 0;
 
     switch (self.bytes) {

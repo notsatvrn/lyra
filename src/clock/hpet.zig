@@ -30,7 +30,7 @@ const ConfigReg = packed struct(u64) {
 
 var mapped: usize = 0;
 
-pub inline fn check() bool {
+pub fn check() bool {
     var uacpi_table: acpi.UAcpiTable = undefined;
     const status = acpi.c.uacpi_table_find_by_signature(acpi.c.ACPI_HPET_SIGNATURE, @ptrCast(&uacpi_table));
     if (status != acpi.c.UACPI_STATUS_OK or uacpi_table.ptr == null) return false;
@@ -49,7 +49,7 @@ pub inline fn counter() u64 {
     return io.memIn(u64, mapped + COUNTER);
 }
 
-pub inline fn counterSpeed() u64 {
+pub fn counterSpeed() u64 {
     @as(*volatile ConfigReg, @ptrFromInt(mapped + CONFIG)).counter_enabled = true;
     const period = io.memIn(CapIdReg, mapped + CAP_ID).period;
     const fs_per_s: u64 = 1000 * 1000 * 1000 * 1000 * 1000;

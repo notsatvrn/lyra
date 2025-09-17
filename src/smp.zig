@@ -101,7 +101,7 @@ pub fn LockingStorage(comptime T: type) type {
 
         // INIT / DEINIT
 
-        pub inline fn init(allocator: Allocator) !Self {
+        pub fn init(allocator: Allocator) !Self {
             const n = limine.cpus.response.count;
             return .{
                 .allocator = allocator,
@@ -109,21 +109,24 @@ pub fn LockingStorage(comptime T: type) type {
             };
         }
 
-        pub inline fn deinit(self: Self) void {
+        pub fn deinit(self: Self) void {
             for (self.objects) |o| self.allocator.destroy(o.value);
             self.allocator.free(self.objects);
         }
 
         // LOCKING
 
-        pub inline fn lockCpu(self: *Self, cpu: usize) *T {
+        pub fn lockCpu(self: *Self, cpu: usize) *T {
             const object = &self.objects[cpu];
             object.lock.lock();
+            if (cpu != getCpu()) object.dirty = true;
             return &object.value;
         }
 
-        pub inline fn lock(self: *Self) *T {
-            return self.lockCpu(getCpu());
+        pub fn lock(self: *Self) *T {
+            const object = &self.objects[getCpu()];
+            object.lock.lock();
+            return &object.value;
         }
 
         pub inline fn isDirty(object: *T) bool {
