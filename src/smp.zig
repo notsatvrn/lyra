@@ -32,7 +32,7 @@ pub fn launch(comptime entry: fn () noreturn) noreturn {
         const cpu = cpus.cpus[i];
         cpu.index = i;
         cpu.jump(wrap.wrapped);
-        rng.jitterEntropy();
+        rng.clockEntropy();
     }
 
     cpu0.index = 0;

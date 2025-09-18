@@ -46,6 +46,7 @@ pub inline fn print() void {
 // https://osdev.wiki/wiki/PCI#Configuration_Space_Access_Mechanism_#1
 
 const io = @import("io.zig");
+const rng = @import("rng.zig");
 
 const CONFIG_ADDRESS = 0xCF8;
 const CONFIG_DATA = 0xCFC;
@@ -84,6 +85,8 @@ fn detectBus(bus: u8) std.mem.Allocator.Error!usize {
     var num: usize = 0;
     slots: for (0..32) |slot| {
         for (0..8) |func| {
+            defer rng.clockEntropy();
+
             const location = DeviceLocation{
                 .func = @truncate(func),
                 .slot = @truncate(slot),

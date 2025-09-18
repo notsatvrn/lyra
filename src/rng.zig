@@ -1,7 +1,12 @@
 //! The random number generator system.
 //!
-//! Each logical CPU gets its own ChaCha8 CSPRNG generator, and an entropy buffer.
-//! Periodically, the entropy buffer will be combined into the global generator.
+//! Each CPU gets its own ChaCha8 CSPRNG generator, and an entropy buffer.
+//! Additionally, there is a global entropy pool backed by a SHA-3-based hash.
+//!
+//! When the entropy buffer is filled, or when cycleAllEntropy is called,
+//! the entire buffer will be mixed into the global entropy pool. The pool is
+//! then used to provide entropy to the generator. This way, we can gather and
+//! spread entropy across every CPU, avoiding unnecessary writes and locking.
 
 const std = @import("std");
 const smp = @import("smp.zig");
@@ -20,7 +25,7 @@ const Entropy = struct {
     index: u8 = 0,
     dumped: bool = false,
 
-    pub fn add(self: *Entropy, state: *State, value: anytype) void {
+    pub fn add(self: *Entropy, value: anytype) void {
         const bytes: []const u8 =
             if (@typeInfo(@TypeOf(value)) == .pointer)
                 std.mem.asBytes(value)[0..]
@@ -33,8 +38,8 @@ const Entropy = struct {
             self.index +%= 1;
 
             if (self.dumped) {
-                // this will be set if dumpEntropyAndReseedAll was called
-                // to avoid dumping the same entropy twice, just continue
+                // will be set if cycleAllEntropy was called
+                // avoid dumping the same entropy twice
                 self.dumped = false;
                 continue;
             }
@@ -42,9 +47,9 @@ const Entropy = struct {
             if (self.index == 0) {
                 // only happens every 256 bytes
                 @branchHint(.unlikely);
+                const state: *State = @fieldParentPtr("entropy", self);
                 lock.lock();
-                // all = true, we just filled it
-                state.dumpEntropyAndReseed(true);
+                state.cycleEntropy(true);
                 lock.unlock();
             }
         }
@@ -55,12 +60,12 @@ const State = struct {
     entropy: Entropy,
     generator: ChaCha,
 
-    pub fn dumpEntropyAndReseed(self: *State, all: bool) void {
+    pub fn cycleEntropy(self: *State, all: bool) void {
         // unless told otherwise, we should only mix
         // the newer bytes into the global entropy pool
         const end = if (all) 255 else self.entropy.index;
         entropy.update(self.entropy.buffer[0 .. end + 1]);
-        // now we use the pool to reseed the generator
+        // use the pool to give entropy to the generator
         var data: [64]u8 = undefined;
         entropy.squeeze(data[0..]);
         self.generator.addEntropy(data[0..]);
@@ -107,19 +112,20 @@ fn makeSeed() [32]u8 {
 
 pub fn addEntropy(value: anytype) void {
     const state = states.get();
-    state.entropy.add(state, value);
+    state.entropy.add(value);
 }
 
-pub fn jitterEntropy() void {
+/// Add entropy from the clock value.
+/// Call this as much as possible.
+pub fn clockEntropy() void {
     // upper bits won't provide much unique data
     addEntropy(@as(u32, @truncate(clock.counter())));
 }
 
-/// Just grab whatever is available.
-pub fn dumpEntropyAndReseedAll() void {
+pub fn cycleAllEntropy() void {
     lock.lock();
     for (states.objects) |*state|
-        state.dumpEntropyAndReseed(false);
+        state.cycleEntropy(false);
     lock.unlock();
 }
 

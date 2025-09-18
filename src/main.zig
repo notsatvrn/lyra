@@ -52,9 +52,6 @@ export fn stage1() noreturn {
     util.disableInterrupts();
     rng.init();
     pci.init();
-    // we're gonna be doing this a lot early on
-    // we need to get out of low-entropy conditions ASAP
-    rng.jitterEntropy();
 
     smp.launch(stage2);
 }
@@ -63,10 +60,10 @@ fn stage2() noreturn {
     const cpu = smp.getCpu();
 
     memory.vmm.kernel.tables.get().load();
-    rng.jitterEntropy();
+    rng.clockEntropy();
 
-    // do this somewhere around the end of the boot process
-    if (cpu == 0) rng.dumpEntropyAndReseedAll();
+    // get all the entropy we can
+    if (cpu == 0) rng.cycleAllEntropy();
 
     logger.debug("cpu {} halting...", .{cpu});
 
