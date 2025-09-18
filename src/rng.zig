@@ -58,7 +58,7 @@ const State = struct {
         // unless told otherwise, we should only mix
         // the newer bytes into the global entropy pool
         const index = self.entropy.index.rmw(.Xchg, 0, .seq_cst);
-        const end: usize = if (all) 256 else index + 1;
+        const end = if (all) 256 else @as(usize, index) + 1;
         entropy.update(self.entropy.buffer[0..end]);
         // use the pool to give entropy to the generator
         var data: [64]u8 = undefined;
