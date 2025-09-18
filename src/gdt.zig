@@ -9,7 +9,6 @@ const memory = @import("memory.zig");
 
 // STANDARD SEGMENT STRUCTURES
 
-// Access byte structure.
 pub const Access = packed struct(u8) {
     accessed: bool = false,
     mutable: bool = true,
@@ -32,7 +31,6 @@ pub const Access = packed struct(u8) {
     };
 };
 
-// Flags structure.
 pub const Flags = packed struct(u4) {
     reserved: u1 = 0,
     size: Size = .x64,
@@ -45,7 +43,6 @@ pub const Flags = packed struct(u4) {
     };
 };
 
-// Segment location selectors.
 pub const SegmentSelector = enum(u16) {
     null_desc = 0x00,
     kernel_code = 0x08,
@@ -55,7 +52,6 @@ pub const SegmentSelector = enum(u16) {
     tss = 0x28,
 };
 
-// Segment descriptor.
 // Limit and base are ignored on x86-64.
 const SegmentDescriptor = packed struct(u64) {
     limit_lo: u16 = 0xFFFF,
@@ -68,7 +64,6 @@ const SegmentDescriptor = packed struct(u64) {
 
 // TASK STATE SEGMENT STRUCTURES
 
-// Task State Segment.
 const Tss = packed struct {
     reserved1: u32,
     rsp0: u64, // Stack pointer to load when switching to Ring 0.
@@ -96,18 +91,12 @@ const DescriptorExtension = packed struct(u64) {
 
 // TABLE DATA
 
-// System table register.
-// Made public because it's also used by the IDT.
 pub const Register = packed struct {
     limit: u16,
     base: u64,
 };
 
-/// Task State Segment.
-/// Placed in the BSS section to ensure it is zeroed out.
-var init_tss: Tss linksection(".bss") = undefined;
-
-// Initial Global Descriptor Table state.
+var init_tss: Tss = undefined;
 var init_gdt = [_]SegmentDescriptor{
     undefined, // null descriptor
     .{ .access = .{ .level = .kernel, .type = .code } },
@@ -119,18 +108,17 @@ var init_gdt = [_]SegmentDescriptor{
     undefined, // first half
     undefined, // second half
 };
-
 var gdt: []SegmentDescriptor = &init_gdt;
 
 // UTILITIES
 
-// Load the initial Global Descriptor Table.
+/// Load the initial Global Descriptor Table.
 pub inline fn init() void {
     writeTSS(&init_tss, 0);
     load(0);
 }
 
-// Create a new GDT with a TSS for each CPU.
+/// Create a new GDT with a TSS for each CPU.
 pub fn update(cpus: usize) !void {
     // Allocate a new GDT with enough space to store a TSS for each CPU.
     gdt = try memory.allocator.alloc(SegmentDescriptor, 5 + (cpus * 2));
@@ -142,40 +130,40 @@ pub fn update(cpus: usize) !void {
     for (0..cpus) |i| writeTSS(&tss[i], i);
 }
 
-// Write the initial state for a Task State Segment.
+/// Write the initial state for a Task State Segment.
 pub fn writeTSS(tss: *Tss, offset: usize) void {
     const selector = @intFromEnum(SegmentSelector.tss) / @sizeOf(SegmentDescriptor);
-    var tss_segment: *SegmentDescriptor = &gdt[selector + (offset * 2)];
-    var tss_extension: *DescriptorExtension = @ptrCast(&gdt[selector + (offset * 2) + 1]);
+    var segment: *SegmentDescriptor = &gdt[selector + (offset * 2)];
+    var extension: *DescriptorExtension = @ptrCast(&gdt[selector + (offset * 2) + 1]);
 
     const base = @intFromPtr(tss);
     const limit = @sizeOf(Tss) - 1;
 
-    tss_segment.base_lo = @truncate(base);
-    tss_segment.base_hi = @truncate(base >> 24);
-    tss_segment.limit_lo = limit & 0xFFFF;
-    tss_segment.limit_hi = limit >> 16;
+    segment.base_lo = @truncate(base);
+    segment.base_hi = @truncate(base >> 24);
+    segment.limit_lo = limit & 0xFFFF;
+    segment.limit_hi = limit >> 16;
 
-    tss_segment.access = .{
+    segment.access = .{
         .accessed = true,
         .mutable = false,
         .type = .code,
         .regular = false,
         .level = .kernel,
     };
-    tss_segment.flags = .{};
+    segment.flags = .{};
 
-    tss_extension.base = @truncate(base >> 32);
-    tss_extension.reserved = 0;
+    extension.base = @truncate(base >> 32);
+    extension.reserved = 0;
 }
 
-// Load the current Global Descriptor Table.
-// Sets the task register to the TSS offset.
+/// Load the current Global Descriptor Table.
+/// Sets the task register to the TSS offset.
 pub inline fn load(tss: usize) void {
     // Set the GDT register.
     const gdtr = Register{
         .limit = @truncate((@sizeOf(SegmentDescriptor) * gdt.len) - 1),
-        .base = @intFromPtr(&gdt[0]),
+        .base = @intFromPtr(gdt.ptr),
     };
     asm volatile ("lgdt (%[gdtr])"
         :
@@ -207,12 +195,12 @@ pub inline fn load(tss: usize) void {
     const val = start + (tss * @sizeOf(SegmentDescriptor) * 2);
     asm volatile ("ltr %[selector]"
         :
-        // we have to truncate b/c ltr takes r/m16
+        // truncate because ltr takes r/m16
         : [selector] "r" (@as(u16, @truncate(val))),
     );
 }
 
-// Get the current CPU's Task Register as an offset into the GDT.
+/// Get the current CPU's Task Register as an offset into the GDT.
 pub inline fn str() usize {
     return (asm volatile ("str %[tr]"
         : [tr] "=r" (-> usize),

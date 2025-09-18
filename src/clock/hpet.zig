@@ -37,7 +37,7 @@ pub fn check() bool {
 
     const addr = @as(*const acpi.Hpet, @ptrCast(@alignCast(uacpi_table.ptr.?))).address.address;
     // the HPET address is expected to be 4KiB boundary aligned, and the region is 1KiB
-    mapped = memory.vmm.kernel.mapSimple(addr, 1024, .{ .writable = true });
+    mapped = memory.vmm.kernel.mapSimple(addr, 1024, .{ .writable = true, .uncached = true });
 
     const basics = io.memIn(CapIdReg, mapped);
     return (basics.period > 0) and (basics.period <= 0x05F5E100) and basics.long_mode;

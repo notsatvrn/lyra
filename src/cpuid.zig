@@ -47,6 +47,10 @@ pub const Features = struct {
     sse42: bool,
     avx: bool,
     aes: bool,
+
+    // RNG
+    rdrand: bool,
+    rdseed: bool,
 };
 
 pub var features: Features = undefined;
@@ -120,7 +124,24 @@ pub fn identify() void {
         features.xsave =        (ecx >> 26) & 1 == 1;
         features.osxsave =      (ecx >> 27) & 1 == 1;
         features.avx =          (ecx >> 28) & 1 == 1;
+        features.rdrand =       (ecx >> 30) & 1 == 1;
         features.hypervisor =   (ecx >> 31) == 1;
+        // zig fmt: on
+    }
+
+    // features on CPUID leaf 7
+    {
+        var edx: u32 = undefined;
+        var ecx: u32 = undefined;
+        var ebx: u32 = undefined;
+        asm volatile ("cpuid"
+            : [_] "={ebx}" (ebx),
+              [_] "={ecx}" (ecx),
+              [_] "={edx}" (edx),
+            : [_] "{eax}" (7),
+            : .{ .eax = true });
+        // zig fmt: off
+        features.rdseed = (ebx >> 18) & 1 == 1;
         // zig fmt: on
     }
 

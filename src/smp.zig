@@ -1,12 +1,12 @@
+const std = @import("std");
 const limine = @import("limine.zig");
-const memory = @import("memory.zig");
+const gdt = @import("gdt.zig");
+const isr = @import("int/isr.zig");
+const rng = @import("rng.zig");
 
 const logger = @import("log.zig").Logger{ .name = "smp" };
 
 // INITIALIZATION
-
-const gdt = @import("gdt.zig");
-const isr = @import("int/isr.zig");
 
 pub var launched = false;
 
@@ -14,17 +14,15 @@ pub fn launch(comptime entry: fn () noreturn) noreturn {
     const cpus = limine.cpus.response;
     const cpu0 = cpus.cpus[0];
 
-    // not sure if this can happen, but we don't want to deal with it right now
-    if (cpu0.id != cpus.bsp_id) logger.panic("cpu 0 id != bootstrap id", .{});
+    std.debug.assert(cpu0.lapic_id == cpus.bsp_lapic_id);
     // 16MiB minimum memory requirement, should never OOM
     gdt.update(cpus.count) catch unreachable;
     isr.newStacks(cpus.count) catch unreachable;
 
     const wrap = struct {
         pub fn wrapped(cpu: *const limine.Cpu) callconv(.c) noreturn {
-            gdt.load(cpu.extra);
+            gdt.load(cpu.index);
             isr.storeStack();
-            logger.debug("cpu {} online (acpi_id: {})", .{ getCpu(), info().acpi_id });
             entry();
         }
     };
@@ -32,11 +30,12 @@ pub fn launch(comptime entry: fn () noreturn) noreturn {
     launched = true;
     for (1..cpus.count) |i| {
         const cpu = cpus.cpus[i];
-        cpu.extra = i;
+        cpu.index = i;
         cpu.jump(wrap.wrapped);
+        rng.jitterEntropy();
     }
 
-    cpu0.extra = 0;
+    cpu0.index = 0;
     gdt.load(0);
     entry();
 }
@@ -52,28 +51,23 @@ pub inline fn info() *const limine.Cpu {
 
 // THREAD-LOCAL STORAGE
 
-const std = @import("std");
-const Allocator = std.mem.Allocator;
+const allocator = @import("memory.zig").allocator;
 
 pub fn LocalStorage(comptime T: type) type {
     return struct {
-        allocator: Allocator,
         objects: []T,
 
         const Self = @This();
 
         // INIT / DEINIT
 
-        pub inline fn init(allocator: Allocator) !Self {
+        pub fn init() !Self {
             const n = limine.cpus.response.count;
-            return .{
-                .allocator = allocator,
-                .objects = try allocator.alloc(T, n),
-            };
+            return .{ .objects = try allocator.alloc(T, n) };
         }
 
         pub inline fn deinit(self: Self) void {
-            self.allocator.free(self.objects);
+            allocator.free(self.objects);
         }
 
         // GET
@@ -88,7 +82,6 @@ pub fn LockingStorage(comptime T: type) type {
     return struct {
         const Lock = @import("utils").lock.SpinLock;
 
-        allocator: Allocator,
         objects: []Entry,
 
         const Entry = struct {
@@ -101,17 +94,13 @@ pub fn LockingStorage(comptime T: type) type {
 
         // INIT / DEINIT
 
-        pub fn init(allocator: Allocator) !Self {
+        pub fn init() !Self {
             const n = limine.cpus.response.count;
-            return .{
-                .allocator = allocator,
-                .objects = try allocator.alloc(Entry, n),
-            };
+            return .{ .objects = try allocator.alloc(Entry, n) };
         }
 
-        pub fn deinit(self: Self) void {
-            for (self.objects) |o| self.allocator.destroy(o.value);
-            self.allocator.free(self.objects);
+        pub inline fn deinit(self: Self) void {
+            allocator.free(self.objects);
         }
 
         // LOCKING

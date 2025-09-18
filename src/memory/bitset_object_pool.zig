@@ -46,7 +46,7 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
 
         inline fn addBin(self: *Self, n: usize) !void {
             const objects = try allocator.alloc(T, obj_count);
-            var used_set = try UsedSet.init(allocator, obj_size);
+            var used_set = try UsedSet.init(allocator, obj_count);
             _ = used_set.claimRangeFast(n);
 
             try self.bins.append(allocator, .{

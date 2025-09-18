@@ -162,45 +162,15 @@ pub const SmbiosResponse = extern struct {
     entry_64: *const void,
 };
 
-// EFI SYSTEM TABLE
+// KERNEL ADDRESS
 
-pub export var efi_system_table linksection(".requests") =
-    Request(.{ 0x5ceba5163eaaf6d6, 0x0a6981610cf65fcc }, EfiSystemTableResponse){};
+pub export var kaddr linksection(".requests") =
+    Request(.{ 0x71ba76863cc55f63, 0xb2644a48c516a487 }, KernelAddressResponse){};
 
-pub const EfiSystemTableResponse = extern struct {
+pub const KernelAddressResponse = extern struct {
     revision: u64,
-    ptr: *std.os.uefi.tables.SystemTable,
-};
-
-// EFI MEMORY MAP
-
-const EfiMemoryDesc = std.os.uefi.tables.MemoryDescriptor;
-
-pub export var efi_mmap linksection(".requests") =
-    Request(.{ 0x7df62a431d6872d5, 0xa4fcdfb3e57306c8 }, EfiMemoryMapResponse){};
-
-pub const EfiMemoryMapResponse = extern struct {
-    revision: u64,
-    mmap: u64,
-    mmap_size: u64,
-    desc_size: u64,
-    desc_version: u64,
-};
-
-pub const EfiMemoryMapIterator = struct {
-    addr: u64 = 0,
-
-    pub fn next(self: *EfiMemoryMapIterator) ?*EfiMemoryDesc {
-        if (self.addr >= (efi_mmap.response.mmap + efi_mmap.response.mmap_size)) {
-            return null;
-        } else if (self.addr == 0) {
-            self.addr = efi_mmap.response.mmap;
-        }
-
-        const desc: *EfiMemoryDesc = @ptrFromInt(self.addr);
-        self.addr += efi_mmap.response.desc_size;
-        return desc;
-    }
+    physical: u64,
+    virtual: u64,
 };
 
 // KERNEL FILE
@@ -232,17 +202,6 @@ pub const File = extern struct {
     gpt_disk_uuid: Uuid,
     gpt_part_uuid: Uuid,
     part_uuid: Uuid,
-};
-
-// KERNEL ADDRESS
-
-pub export var kaddr linksection(".requests") =
-    Request(.{ 0x71ba76863cc55f63, 0xb2644a48c516a487 }, KernelAddressResponse){};
-
-pub const KernelAddressResponse = extern struct {
-    revision: u64,
-    physical: u64,
-    virtual: u64,
 };
 
 // MODULES
@@ -282,7 +241,7 @@ pub const CpusRequest = extern struct {
 pub const CpusResponse = extern struct {
     revision: u64,
     flags: u32,
-    bsp_id: u32,
+    bsp_lapic_id: u32,
     count: u64,
     cpus: [*]const *Cpu,
 };
@@ -291,10 +250,10 @@ pub const CpuEntry = *const fn (*Cpu) callconv(.c) noreturn;
 
 pub const Cpu = extern struct {
     acpi_id: u32,
-    id: u32,
+    lapic_id: u32,
     reserved: u64,
     goto_addr: CpuEntry,
-    extra: u64,
+    index: u64,
 
     pub inline fn jump(cpu: *Cpu, entry: CpuEntry) void {
         @atomicStore(CpuEntry, &cpu.goto_addr, entry, .seq_cst);

@@ -111,7 +111,7 @@ pub fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: anytype) 
 
     var it = std.debug.StackIterator.init(first_trace_addr, null);
     while (it.next()) |return_address| {
-        const address = return_address -| 1;
+        const address = return_address -| 5;
         if (address == 0) break;
         printRaw("- 0x{x:0>16}", .{address}) catch unreachable;
     }

@@ -22,8 +22,8 @@ pub const kernel = struct {
 
     pub fn init(offset: usize) void {
         // 16MiB minimum memory requirement, should never OOM
-        tables = Tables.init(memory.allocator) catch unreachable;
-        offsets = Offsets.init(memory.allocator) catch unreachable;
+        tables = Tables.init() catch unreachable;
+        offsets = Offsets.init() catch unreachable;
         for (tables.objects) |*t| t.load();
         for (offsets.objects) |*o| o.* = offset;
     }

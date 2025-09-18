@@ -10,6 +10,7 @@ const clock = @import("clock.zig");
 const acpi = @import("acpi.zig");
 const smp = @import("smp.zig");
 const pci = @import("pci.zig");
+const rng = @import("rng.zig");
 
 const tty = @import("tty.zig");
 const gfx = @import("gfx.zig");
@@ -49,14 +50,26 @@ export fn stage1() noreturn {
     util.enableInterrupts();
     clock.init();
     util.disableInterrupts();
+    rng.init();
     pci.init();
+    // we're gonna be doing this a lot early on
+    // we need to get out of low-entropy conditions ASAP
+    rng.jitterEntropy();
 
     smp.launch(stage2);
 }
 
 fn stage2() noreturn {
+    const cpu = smp.getCpu();
+
     memory.vmm.kernel.tables.get().load();
-    logger.debug("hello from cpu {}! halting...", .{smp.getCpu()});
+    rng.jitterEntropy();
+
+    // do this somewhere around the end of the boot process
+    if (cpu == 0) rng.dumpEntropyAndReseedAll();
+
+    logger.debug("cpu {} halting...", .{cpu});
+
     util.halt();
 }
 
