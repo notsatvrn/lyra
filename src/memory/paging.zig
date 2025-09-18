@@ -69,7 +69,7 @@ pub const Entry = packed struct(u64) {
     }
 };
 
-pub const Pool = @import("bitset_object_pool.zig").BitSetObjectPool(PageTable, .{});
+pub const Pool = @import("object_pool.zig").ObjectPool(PageTable, .{});
 
 // LOAD/STORE PAGE TABLE POINTER
 

@@ -30,9 +30,9 @@ Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.or
     - [x] text mode backend
     - [x] framebuffer backend
     - [ ] ansi escape codes
-  - [ ] memory
+  - [x] memory
     - [x] pmm
-    - [ ] vmm
+    - [x] vmm
   - [ ] process scheduler
     - [x] red-black tree impl
     - [ ] process structures

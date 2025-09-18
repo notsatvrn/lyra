@@ -106,17 +106,13 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
 
 // CLAIM RANGE (ALLOCATION)
 
-// allocate from the tail (fast)
-pub fn claimRangeFast(self: *Self, n: usize) ?usize {
-    if (self.len - self.tail < n) return null;
-
-    defer self.tail += n;
-    self.operation(self.tail, n, .set);
-    return self.tail;
-}
-
-// allocate from the start
 pub fn claimRange(self: *Self, n: usize) ?usize {
+    if (self.len - self.tail >= n) {
+        defer self.tail += n;
+        self.operation(self.tail, n, .set);
+        return self.tail;
+    }
+
     if (self.len - self.used < n) return null;
 
     const ints = (self.len + 63) / 64;
@@ -171,6 +167,67 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
             start += zeroes;
             len -= zeroes;
             rem = n;
+        }
+    }
+
+    return null;
+}
+
+/// allocate from offset + alignment
+pub fn claimRangeAdvanced(self: *Self, offset: usize, alignment: usize, n: usize) ?usize {
+    const align_mask = alignment - 1;
+
+    const tail = (@max(self.tail, offset) + align_mask) & ~align_mask;
+    if (tail < self.len and self.len - tail >= n) {
+        defer self.tail = tail + n;
+        self.operation(tail, n, .set);
+        return tail;
+    }
+
+    const aligned_offset = (offset + align_mask) & ~align_mask;
+    if (aligned_offset > self.len or self.len - aligned_offset < n) return null;
+
+    var pos: usize = aligned_offset;
+
+    // fast path: only one page
+    if (n == 1) {
+        while (pos < self.len) {
+            const i = pos / 64;
+            const bit: u6 = @truncate(pos);
+            const int = self.ptr[i] >> bit;
+
+            if (int & 1 == 0) {
+                self.operation(pos, 1, .set);
+                return pos;
+            } else pos += alignment;
+        }
+        return null;
+    }
+
+    var needed: usize = n;
+
+    while (pos < self.len) {
+        const i = pos / 64;
+        const bit: u6 = @truncate(pos);
+        const int = self.ptr[i] >> bit;
+
+        const rem = self.len - pos;
+        const size = @min(rem, 64);
+        const pages: u6 = @truncate(size - @as(usize, bit));
+
+        const free = @ctz(int);
+        if (free >= pages) {
+            needed -|= pages;
+            if (needed == 0) {
+                return pos;
+            } else {
+                // to next int
+                pos = (pos + 63) & ~@as(usize, 63);
+            }
+        } else {
+            needed = n;
+            // to next aligned part
+            pos = ((pos - aligned_offset + align_mask) & ~align_mask) + aligned_offset;
         }
     }
 

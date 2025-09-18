@@ -8,14 +8,17 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
+const Alignment = std.mem.Alignment;
 
 const limine = @import("../limine.zig");
 const logger = @import("../log.zig").Logger{ .name = "pmm" };
 
 const memory = @import("../memory.zig");
 const PageSize = memory.PageSize;
-const min_page_size = memory.min_page_size;
 const pagesNeeded = memory.pagesNeeded;
+
+const min_page_size = memory.min_page_size;
+const min_alignment = Alignment.fromByteUnits(min_page_size);
 
 // REGION STRUCTURE
 
@@ -31,48 +34,107 @@ pub const Region = struct {
 
     // OPERATIONS
 
-    pub fn map(self: *Self, size: PageSize, len: usize, comptime fast: bool) ?[*]u8 {
-        self.lock.lock();
-        defer self.lock.unlock();
-        _ = size; // TODO: hugepages
-
-        const index = (if (fast)
-            self.set.claimRangeFast(len)
-        else
-            self.set.claimRange(len)) orelse return null;
-
-        return @ptrCast(self.ptr + (index * min_page_size));
+    // Actual alignment for both the page size and provided custom alignment
+    inline fn realAlignment(alignment: Alignment, size: PageSize) Alignment {
+        const size_align: Alignment = @enumFromInt(size.shift());
+        return alignment.max(size_align);
     }
 
-    pub fn remap(self: *Self, ptr: [*]u8, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
+    // Provided alignment must be the one returned from realAlignment. Used in map() and remap()
+    fn mapInternal(self: *Self, alignment: Alignment, size: PageSize, len: usize) ?usize {
+        if (alignment == min_alignment) {
+            // fast path: no alignment requirement
+            // skip some math and use unaligned claiming
+            return self.set.claimRange(len);
+        }
+
+        const region_addr = @intFromPtr(self.ptr);
+        const aligned_region_addr = alignment.forward(region_addr);
+        const offset = (aligned_region_addr - region_addr) / min_page_size;
+        if (offset > self.set.len) return null;
+
+        const set_align = @as(usize, 1) << (@intFromEnum(alignment) - 12);
+
+        var adjusted_len = len << (size.shift() - 12);
+        if (offset + adjusted_len > self.set.len)
+            adjusted_len -= offset + adjusted_len - self.set.len;
+
+        return self.set.claimRangeAdvanced(offset, set_align, adjusted_len);
+    }
+
+    pub fn map(self: *Self, _alignment: Alignment, size: PageSize, len: usize) ?[*]u8 {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        const alignment = realAlignment(_alignment, size);
+        const index = self.mapInternal(alignment, size, len) orelse return null;
+        return @ptrCast(self.ptr + index * min_page_size);
+    }
+
+    // Handles a few weird cases, such as the aligned pointer being before the start of the region.
+    inline fn alignedIndexAndLen(self: Self, ptr: [*]u8, len: usize, alignment: Alignment) ?struct { usize, usize } {
+        const aligned_addr = alignment.backward(@intFromPtr(ptr));
+        const region_addr = @intFromPtr(self.ptr);
+        var out: struct { usize, usize } = .{ 0, len };
+
+        if (aligned_addr > region_addr) {
+            // aligned address is after region start. set index
+            out[0] = (aligned_addr - region_addr) / min_page_size;
+            // index must be behind the end of the set
+            if (out[0] >= self.set.len) return null;
+        } else {
+            // aligned address is before region start. decrease len
+            out[1] -= ((region_addr - aligned_addr) / min_page_size);
+        }
+
+        // make index + len still fit in the set
+        if (out[0] + out[1] > self.set.len)
+            out[1] -= out[0] + out[1] - self.set.len;
+
+        return out;
+    }
+
+    pub fn remap(self: *Self, ptr: [*]u8, _alignment: Alignment, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
         assert(@intFromPtr(ptr) >= @intFromPtr(self.ptr));
 
         if (new_len <= len) return ptr;
 
         self.lock.lock();
         defer self.lock.unlock();
-        _ = size; // TODO: hugepages
 
-        const start = (ptr - self.ptr) / min_page_size;
-        const resized = self.set.resizeRange(start, len, new_len);
-        if (resized) return ptr;
+        // try to simply resize the allocation
+
+        const alignment = realAlignment(_alignment, size);
+        const len_shift = size.shift() - 12;
+        const sized_len = len << len_shift;
+        const index_len = self.alignedIndexAndLen(ptr, sized_len, alignment) orelse return null;
+        const index = index_len[0];
+        const adjusted_len = index_len[1];
+        const adjusted_new_len = (new_len << len_shift) - (sized_len - adjusted_len);
+
+        if (self.set.resizeRange(index, adjusted_len, adjusted_new_len)) return ptr;
         if (!may_move) return null;
 
-        self.set.unclaimRange(start, len);
-        const new_start = self.set.claimRange(new_len) orelse return null;
-        const new_block = self.ptr + (new_start * min_page_size);
-        @memcpy(new_block[0 .. len * min_page_size], ptr); // TODO: hugepages
+        // we have to move the allocation
+
+        self.set.unclaimRange(index, adjusted_len);
+        const new_index = self.mapInternal(alignment, size, new_len) orelse return null;
+        const new_block = self.ptr + new_index * min_page_size;
+        @memcpy(new_block[0 .. adjusted_len * min_page_size], ptr);
         return @ptrCast(new_block);
     }
 
-    pub fn unmap(self: *Self, ptr: [*]u8, size: PageSize, len: usize) void {
+    pub fn unmap(self: *Self, ptr: [*]u8, _alignment: Alignment, size: PageSize, len: usize) void {
         assert(@intFromPtr(ptr) >= @intFromPtr(self.ptr));
 
         self.lock.lock();
         defer self.lock.unlock();
-        _ = size; // TODO: hugepages
 
-        self.set.unclaimRange((ptr - self.ptr) / min_page_size, len);
+        const alignment = realAlignment(_alignment, size);
+        const len_shift = size.shift() - 12;
+        const sized_len = len << len_shift;
+        const index_len = self.alignedIndexAndLen(ptr, sized_len, alignment) orelse return;
+        self.set.unclaimRange(index_len[0], index_len[1]);
     }
 };
 
@@ -87,14 +149,14 @@ pub fn init() void {
     var largest: []u8 = "";
     var bitsets_size: usize = 0;
 
-    logger.debug("memory regions: ", .{});
+    logger.info("memory regions: ", .{});
     for (0..limine.mmap.response.count) |i| {
         const entry = limine.mmap.response.entries[i];
         if (entry.type != .usable) continue;
 
         const addr = @intFromPtr(entry.ptr);
         const pages = entry.len >> PageSize.small.shift();
-        logger.debug("- 0x{x:0>16}, {} pages", .{ addr, pages });
+        logger.info("- 0x{x:0>16}, {} pages", .{ addr, pages });
         // bitset implementation requires 64-bit alignment
         bitsets_size += (pages + 63) / 64;
         // put the address in Limine's higher-half direct map
@@ -159,8 +221,9 @@ pub fn init() void {
     }
 
     logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
-    // let's make out-of-memory scenarios impossible for early boot stuff
-    if (total < 4096) logger.panic("less than 16MiB memory available!", .{});
+
+    const minimum = pagesNeeded(128 * memory.MB, .small); // 128MiB required
+    if (total < minimum) logger.panic("less than 128MiB memory available!", .{});
 }
 
 // REGION UTILITIES
@@ -199,22 +262,19 @@ inline fn findRegion(ptr: [*]u8) ?*Region {
 
 // OPERATIONS
 
-pub fn map(size: PageSize, len: usize) ?[*]u8 {
-    // try all regions until we can allocate fast, then slow only if needed
-    for (regions) |*region| if (region.map(size, len, true)) |ptr| return ptr;
-    for (regions) |*region| if (region.map(size, len, false)) |ptr| return ptr;
-
+pub fn map(alignment: Alignment, size: PageSize, len: usize) ?[*]u8 {
+    for (regions) |*region| if (region.map(alignment, size, len)) |ptr| return ptr;
     return null;
 }
 
-pub fn remap(ptr: [*]u8, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
+pub fn remap(ptr: [*]u8, alignment: Alignment, size: PageSize, len: usize, new_len: usize, may_move: bool) ?[*]u8 {
     if (new_len <= len) return ptr;
     const region = findRegion(ptr) orelse return null;
-    return region.remap(ptr, size, len, new_len, may_move);
+    return region.remap(ptr, alignment, size, len, new_len, may_move);
 }
 
-pub fn unmap(ptr: [*]u8, size: PageSize, len: usize) bool {
+pub fn unmap(ptr: [*]u8, alignment: Alignment, size: PageSize, len: usize) bool {
     const region = findRegion(ptr) orelse return false;
-    region.unmap(ptr, size, len);
+    region.unmap(ptr, alignment, size, len);
     return true;
 }

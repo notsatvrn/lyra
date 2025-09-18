@@ -12,7 +12,7 @@ pub const Config = struct {
     min_pages: usize = 1,
 };
 
-pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
+pub fn ObjectPool(comptime T: type, comptime config: Config) type {
     return struct {
         const obj_size: usize = @sizeOf(T);
         // Objects will be at least min_objects, and more if they'll all fit in min_pages.
@@ -47,7 +47,7 @@ pub fn BitSetObjectPool(comptime T: type, comptime config: Config) type {
         inline fn addBin(self: *Self, n: usize) !void {
             const objects = try allocator.alloc(T, obj_count);
             var used_set = try UsedSet.init(allocator, obj_count);
-            _ = used_set.claimRangeFast(n);
+            _ = used_set.claimRange(n);
 
             try self.bins.append(allocator, .{
                 .objects = @ptrCast(objects),

@@ -53,31 +53,31 @@ pub const PageAllocator = struct {
         .free = free,
     };
 
-    fn alloc(_: *anyopaque, n: usize, _: Alignment, _: usize) ?[*]u8 {
+    fn alloc(_: *anyopaque, n: usize, alignment: Alignment, _: usize) ?[*]u8 {
         std.debug.assert(n > 0);
         if (n >= std.math.maxInt(usize) - min_page_size) return null;
-        const block = pmm.map(.small, pagesNeeded(n, .small));
+        const block = pmm.map(alignment, .small, pagesNeeded(n, .small));
         return @ptrCast(block orelse return null);
     }
 
-    inline fn _remap(buf: []u8, new_len: usize, may_move: bool) ?[*]u8 {
+    inline fn _remap(buf: []u8, alignment: Alignment, new_len: usize, may_move: bool) ?[*]u8 {
         const old_pages = pagesNeeded(buf.len, .small);
         const new_pages = pagesNeeded(new_len, .small);
-        const block = pmm.remap(buf.ptr, .small, old_pages, new_pages, may_move);
+        const block = pmm.remap(buf.ptr, alignment, .small, old_pages, new_pages, may_move);
         return @ptrCast(block orelse return null);
     }
 
-    fn resize(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) bool {
-        return _remap(buf, new_len, false) != null;
+    fn resize(_: *anyopaque, buf: []u8, alignment: Alignment, new_len: usize, _: usize) bool {
+        return _remap(buf, alignment, new_len, false) != null;
     }
 
-    fn realloc(_: *anyopaque, buf: []u8, _: Alignment, new_len: usize, _: usize) ?[*]u8 {
-        return _remap(buf, new_len, true);
+    fn realloc(_: *anyopaque, buf: []u8, alignment: Alignment, new_len: usize, _: usize) ?[*]u8 {
+        return _remap(buf, alignment, new_len, true);
     }
 
-    fn free(_: *anyopaque, slice: []u8, _: Alignment, _: usize) void {
+    fn free(_: *anyopaque, slice: []u8, alignment: Alignment, _: usize) void {
         const pages = pagesNeeded(slice.len, .small);
-        _ = pmm.unmap(slice.ptr, .small, pages);
+        _ = pmm.unmap(slice.ptr, alignment, .small, pages);
     }
 };
 

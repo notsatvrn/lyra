@@ -27,7 +27,6 @@ pub inline fn print() void {
     var iterator = devices.iterator(memory.allocator);
     logger.debug("devices:", .{});
 
-    // 16MiB minimum memory requirement, should never OOM
     while (iterator.next() catch unreachable) |device| {
         logger.debug("- {x:0>2}:{x:0>2}.{x} ({x:0>4}:{x:0>4}) : {f}", .{
             device.key.bus,
@@ -75,8 +74,7 @@ fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
     };
 }
 
-pub inline fn init() void {
-    // 16MiB minimum memory requirement, should never OOM
+pub fn init() void {
     const num = detectBus(0) catch unreachable;
     logger.info("found {} devices", .{num});
 }

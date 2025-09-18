@@ -78,12 +78,10 @@ var lock = Lock{};
 // INITIALIZATION
 
 pub fn init() void {
-    // 16MiB minimum memory requirement, should never OOM
     states = States.init() catch unreachable;
     for (states.objects) |*state|
         state.* = .{
             .entropy = .{
-                // 16MiB minimum memory requirement, should never OOM
                 .buffer = @ptrCast(allocator.alloc(u8, 256) catch unreachable),
             },
             .generator = .init(makeSeed()),

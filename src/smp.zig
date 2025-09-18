@@ -15,7 +15,6 @@ pub fn launch(comptime entry: fn () noreturn) noreturn {
     const cpu0 = cpus.cpus[0];
 
     std.debug.assert(cpu0.lapic_id == cpus.bsp_lapic_id);
-    // 16MiB minimum memory requirement, should never OOM
     gdt.update(cpus.count) catch unreachable;
     isr.newStacks(cpus.count) catch unreachable;
 
@@ -118,7 +117,7 @@ pub fn LockingStorage(comptime T: type) type {
             return &object.value;
         }
 
-        pub inline fn isDirty(object: *T) bool {
+        pub inline fn isDirty(_: Self, object: *T) bool {
             const entry: *Entry = @fieldParentPtr("value", object);
             return entry.dirty;
         }

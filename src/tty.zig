@@ -342,7 +342,6 @@ pub fn virtualize() void {
     virtual_mode.pitch = virtual_mode.width * buffer.bytes;
 
     const virtual_vmem_size = virtual_mode.pitch * virtual_mode.height;
-    // 16MiB minimum memory requirement, should never OOM
     const virtual_vmem = allocator.alloc(u8, virtual_vmem_size) catch unreachable;
 
     info = .init(&virtual_mode);
