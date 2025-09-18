@@ -7,12 +7,15 @@
 //! the entire buffer will be mixed into the global entropy pool. The pool is
 //! then used to provide entropy to the generator. This way, we can gather and
 //! spread entropy across every CPU, avoiding unnecessary writes and locking.
+//!
+//! The per-cpu entropy buffers are lock-free by use of atomics.
 
 const std = @import("std");
 const smp = @import("smp.zig");
 const clock = @import("clock.zig");
 const limine = @import("limine.zig");
 
+const Atomic = std.atomic.Value;
 const ChaCha = std.Random.ChaCha;
 const Lock = @import("utils").lock.SpinLock;
 const allocator = @import("memory.zig").allocator;
@@ -22,8 +25,7 @@ const TurboShake256 = std.crypto.hash.sha3.TurboShake256(null);
 
 const Entropy = struct {
     buffer: *[256]u8,
-    index: u8 = 0,
-    dumped: bool = false,
+    index: Atomic(u8) = .init(0),
 
     pub fn add(self: *Entropy, value: anytype) void {
         const bytes: []const u8 =
@@ -33,18 +35,10 @@ const Entropy = struct {
                 &std.mem.toBytes(value);
 
         for (0..bytes.len) |i| {
-            self.buffer[self.index] = bytes[i];
-            // wrap back to start at the end
-            self.index +%= 1;
+            const index = self.index.fetchAdd(1, .seq_cst);
+            self.buffer[index] = bytes[i];
 
-            if (self.dumped) {
-                // will be set if cycleAllEntropy was called
-                // avoid dumping the same entropy twice
-                self.dumped = false;
-                continue;
-            }
-
-            if (self.index == 0) {
+            if (index == 255) {
                 // only happens every 256 bytes
                 @branchHint(.unlikely);
                 const state: *State = @fieldParentPtr("entropy", self);
@@ -63,17 +57,15 @@ const State = struct {
     pub fn cycleEntropy(self: *State, all: bool) void {
         // unless told otherwise, we should only mix
         // the newer bytes into the global entropy pool
-        const end = if (all) 255 else self.entropy.index;
-        entropy.update(self.entropy.buffer[0 .. end + 1]);
+        const index = self.entropy.index.rmw(.Xchg, 0, .seq_cst);
+        const end: usize = if (all) 256 else index + 1;
+        entropy.update(self.entropy.buffer[0..end]);
         // use the pool to give entropy to the generator
         var data: [64]u8 = undefined;
         entropy.squeeze(data[0..]);
         self.generator.addEntropy(data[0..]);
-        // prevent double-dump in Entropy.add
-        if (!all) self.entropy.dumped = true;
-        asm volatile ("" ::: .{ .memory = true });
         // back to start of the buffer
-        self.entropy.index = 0;
+        self.entropy.index.store(0, .release);
     }
 };
 
