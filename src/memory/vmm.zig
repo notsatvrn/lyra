@@ -12,37 +12,43 @@ pub const ManagedPageTable = @import("ManagedPageTable.zig");
 pub const kernel = struct {
     const smp = @import("../smp.zig");
     const Tables = smp.LocalStorage(ManagedPageTable);
-    const Offsets = smp.LocalStorage(usize);
+    const UsedSet = @import("UsedSet.zig");
+    const Sets = smp.LocalStorage(UsedSet);
     const limine = @import("../limine.zig");
 
     const logger = @import("../log.zig").Logger{ .name = "vmm/kernel" };
 
     pub var tables: Tables = undefined;
-    pub var offsets: Offsets = undefined;
+    pub var sets: Sets = undefined;
+    var offset: usize = 0;
 
-    pub fn init(offset: usize) void {
-        // 16MiB minimum memory requirement, should never OOM
+    const page_size = memory.PageSize.small;
+    const page_mask = page_size.bytes() - 1;
+
+    pub fn init(start: usize) void {
+        offset = (start + page_mask) & ~page_mask;
+
         tables = Tables.init() catch unreachable;
-        offsets = Offsets.init() catch unreachable;
         for (tables.objects) |*t| t.load();
-        for (offsets.objects) |*o| o.* = offset;
+
+        sets = Sets.init() catch unreachable;
+        const pages = (std.math.maxInt(usize) - offset) >> page_size.shift();
+        for (sets.objects) |*o| o.* = UsedSet.init(memory.allocator, pages) catch unreachable;
     }
 
     /// Picks a spot in memory after the kernel to map in. Uses small pages.
     pub fn mapSimple(phys: usize, len: usize, flags: ManagedPageTable.Entry) usize {
-        const offset = offsets.get();
-        // align offset to a page
-        offset.* = (offset.* + 0xFFF) & ~@as(usize, 0xFFF);
-        // do the mapping
-        const virt = offset.*;
+        const set = sets.get();
+        const pages = memory.pagesNeeded(len, .small);
+        const start = set.claimRange(pages) orelse return 0;
+        const virt = offset + start * page_size.bytes();
+
         map(phys, virt, len, .small, flags);
-        // move the offset by a page
-        offset.* += (len + 0xFFF) & ~@as(usize, 0xFFF);
-        // set the new offset if pre-smp
+
         if (!smp.launched) {
             @branchHint(.unlikely);
             for (1..limine.cpus.response.count) |cpu|
-                offsets.objects[cpu] = offset.*;
+                _ = sets.objects[cpu].claimRange(pages);
         }
 
         return virt;
