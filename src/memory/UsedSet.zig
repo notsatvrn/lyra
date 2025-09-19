@@ -173,21 +173,23 @@ pub fn claimRange(self: *Self, n: usize) ?usize {
     return null;
 }
 
+inline fn alignAddr(addr: usize, offset: usize, align_mask: usize) usize {
+    return ((addr - offset + align_mask) & ~align_mask) + offset;
+}
+
 /// allocate from offset + alignment
 pub fn claimRangeAdvanced(self: *Self, offset: usize, alignment: usize, n: usize) ?usize {
     const align_mask = alignment - 1;
 
-    const tail = (@max(self.tail, offset) + align_mask) & ~align_mask;
+    const tail = alignAddr(@max(self.tail, offset), offset, align_mask);
     if (tail < self.len and self.len - tail >= n) {
         defer self.tail = tail + n;
         self.operation(tail, n, .set);
         return tail;
     }
 
-    const aligned_offset = (offset + align_mask) & ~align_mask;
-    if (aligned_offset > self.len or self.len - aligned_offset < n) return null;
-
-    var pos: usize = aligned_offset;
+    if (offset > self.len or self.len - offset < n) return null;
+    var pos: usize = offset;
 
     // fast path: only one page
     if (n == 1) {
@@ -216,18 +218,19 @@ pub fn claimRangeAdvanced(self: *Self, offset: usize, alignment: usize, n: usize
         const pages: u6 = @truncate(size - @as(usize, bit));
 
         const free = @ctz(int);
-        if (free >= pages) {
+        const goal = @min(needed, pages);
+        if (free >= goal) {
             needed -|= pages;
             if (needed == 0) {
                 return pos;
             } else {
-                // to next int
+                // move pos to next whole integer
                 pos = (pos + 63) & ~@as(usize, 63);
             }
         } else {
             needed = n;
-            // to next aligned part
-            pos = ((pos - aligned_offset + align_mask) & ~align_mask) + aligned_offset;
+            // skip ahead to next aligned region
+            pos = alignAddr(pos, offset, align_mask);
         }
     }
 
