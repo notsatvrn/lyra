@@ -6,6 +6,7 @@
 const std = @import("std");
 const memory = @import("../memory.zig");
 
+pub const paging = @import("paging.zig");
 pub const ManagedPageTable = @import("ManagedPageTable.zig");
 
 /// Kernel virtual memory structures.
@@ -25,11 +26,14 @@ pub const kernel = struct {
     const page_size = memory.PageSize.small;
     const page_mask = page_size.bytes() - 1;
 
-    pub fn init(start: usize) void {
-        offset = (start + page_mask) & ~page_mask;
+    pub fn init() void {
+        // start mapping right after kernel
+        const kaddr = limine.kaddr.response.virtual;
+        const ksize = limine.kfile.response.file.size;
+        offset = (kaddr + ksize + page_mask) & ~page_mask;
 
         tables = Tables.init() catch unreachable;
-        for (tables.objects) |*t| t.load();
+        for (tables.objects) |*t| t.* = .{ .top = paging.load() };
 
         sets = Sets.init() catch unreachable;
         const pages = (std.math.maxInt(usize) - offset) >> page_size.shift();
@@ -78,14 +82,14 @@ pub const kernel = struct {
         const table = &tables.objects[cpu];
         table.map(phys, virt, len, size, flags) catch
             logger.panic("map failed on cpu {}", .{cpu});
-        table.store();
+        if (cpu == smp.getCpu()) table.store();
     }
 
     inline fn unmapCpu(cpu: usize, virt: usize, len: usize, size: memory.PageSize) void {
         const table = &tables.objects[cpu];
         table.unmap(virt, len, size) catch
             logger.panic("unmap failed on cpu {}", .{cpu});
-        table.store();
+        if (cpu == smp.getCpu()) table.store();
     }
 };
 

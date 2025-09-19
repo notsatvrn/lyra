@@ -1,7 +1,7 @@
 //! The random number generator system.
 //!
 //! Each CPU gets its own ChaCha8 CSPRNG generator, and an entropy buffer.
-//! Additionally, there is a global entropy pool backed by a SHA-3-based hash.
+//! Additionally, there is a global entropy pool using 512-bit Blake2b hashing.
 //!
 //! When the entropy buffer is filled, or when cycleAllEntropy is called,
 //! the entire buffer will be mixed into the global entropy pool. The pool is
@@ -19,7 +19,7 @@ const Atomic = std.atomic.Value;
 const ChaCha = std.Random.ChaCha;
 const Lock = @import("utils").lock.SpinLock;
 const allocator = @import("memory.zig").allocator;
-const TurboShake256 = std.crypto.hash.sha3.TurboShake256(null);
+const Blake2b = std.crypto.hash.blake2.Blake2b512;
 
 // STRUCTURES
 
@@ -62,7 +62,7 @@ const State = struct {
         entropy.update(self.entropy.buffer[0..end]);
         // use the pool to give entropy to the generator
         var data: [64]u8 = undefined;
-        entropy.squeeze(data[0..]);
+        entropy.final(data[0..]);
         self.generator.addEntropy(data[0..]);
         // back to start of the buffer
         self.entropy.index.store(0, .release);
@@ -72,7 +72,7 @@ const State = struct {
 const States = smp.LocalStorage(State);
 
 var states: States = undefined;
-var entropy = TurboShake256.init(.{});
+var entropy = Blake2b.init(.{});
 var lock = Lock{};
 
 // INITIALIZATION

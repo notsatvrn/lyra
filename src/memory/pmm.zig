@@ -156,7 +156,7 @@ pub fn init() void {
 
         const addr = @intFromPtr(entry.ptr);
         const pages = entry.len >> PageSize.small.shift();
-        logger.info("- 0x{x:0>16}, {} pages", .{ addr, pages });
+        logger.info("- 0x{X:0>16}, {} pages", .{ addr, pages });
         // bitset implementation requires 64-bit alignment
         bitsets_size += (pages + 63) / 64;
         // put the address in Limine's higher-half direct map

@@ -40,8 +40,7 @@ export fn stage1() noreturn {
         logger.info("- x2apic is supported", .{});
 
     memory.pmm.init();
-    const kfile = limine.kfile.response.file;
-    memory.vmm.kernel.init(kfile.address + kfile.size);
+    memory.vmm.kernel.init();
     memory.ready = true;
 
     tty.virtualize();

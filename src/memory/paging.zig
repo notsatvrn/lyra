@@ -131,12 +131,13 @@ pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usiz
     const unmap = p == null;
 
     const entry_bytes = @as(usize, 1) << shift(level);
+    const entry_mask = entry_bytes - 1;
     var phys = p;
     var start = s;
     // round start up to nearest entry_bytes for end
-    var end = (s + entry_bytes - 1) & ~(entry_bytes - 1);
-    // don't go past e
-    end = @min(e, end);
+    var end = (s +% entry_mask) & ~entry_mask;
+    // fix overflow and don't go past e
+    if (end <= s or end > e) end = e;
 
     for (start_idx..end_idx + 1) |i| {
         const entry = &table[i];
@@ -168,12 +169,12 @@ pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usiz
             // now we have a directory, and we can start mapping in it
             const next_table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
             try mapRecursive(next_table, pool, level - 1, start, end, phys, size, flags);
-            start += entry_bytes;
-            end = @min(e, end + entry_bytes);
+            start +|= entry_bytes;
+            end = @min(e, end +| entry_bytes);
             if (unmap) continue;
         }
         // phys can't be null
-        phys.? += entry_bytes;
+        phys.? +|= entry_bytes;
     }
 }
 
@@ -211,7 +212,7 @@ fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) 
             bottom.level.directory.huge = to == .medium;
             for (0..512) |i| {
                 table[i] = bottom;
-                bottom.address += offset;
+                bottom.address +|= offset;
             }
         },
         // 1GiB -> 4KiB
@@ -222,7 +223,7 @@ fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) 
                 table[i].setAddr(@intFromPtr(&tables[i]));
                 for (0..512) |j| {
                     tables[i][j] = bottom;
-                    bottom.address += 1;
+                    bottom.address +|= 1;
                 }
             }
         },

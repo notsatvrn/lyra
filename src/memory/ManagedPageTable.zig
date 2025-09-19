@@ -52,22 +52,22 @@ pub fn map(self: *Self, phys: usize, virt: usize, len: usize, size: Size, flags:
 
 /// Unmap a section of virtual memory.
 pub fn unmap(self: *Self, virt: usize, len: usize, size: Size) !void {
-    try self.mapInner(null, virt, len, size, undefined);
+    try self.mapInner(null, virt, len, size, .{});
 }
 
 inline fn mapInner(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: Entry) !void {
-    const size_bytes = size.bytes() - 1;
+    const size_mask = size.bytes() - 1;
 
-    var offset = virt & size_bytes;
+    var offset = virt & size_mask;
     var phys_page: ?usize = null;
     if (phys) |addr| {
         // get offset from phys instead
-        offset = addr & size_bytes;
-        phys_page = addr & ~size_bytes;
+        offset = addr & size_mask;
+        phys_page = addr & ~size_mask;
     }
-    const virt_page = virt & ~size_bytes;
+    const virt_page = virt & ~size_mask;
     // offset + len, rounded up to a full page
-    const len_real = (offset + len + size_bytes) & ~size_bytes;
+    const len_real = (offset + len + size_mask) & ~size_mask;
     const end = virt_page + len_real - 1;
 
     const level: u3 = @truncate(4 + limine.paging_mode.response.mode); // 1 = level 5
