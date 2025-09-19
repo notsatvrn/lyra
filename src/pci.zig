@@ -50,7 +50,7 @@ const rng = @import("rng.zig");
 const CONFIG_ADDRESS = 0xCF8;
 const CONFIG_DATA = 0xCFC;
 
-fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
+inline fn configRead(comptime T: type, location: DeviceLocation, offset: u8) T {
     const ConfigAddress = packed struct(u32) {
         offset: u8,
         location: DeviceLocation,

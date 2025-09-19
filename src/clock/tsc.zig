@@ -36,6 +36,7 @@ const logger = @import("../log.zig").Logger{ .name = "bruh" };
 const int_goal = 8; // wait until 8 interrupts before reading
 
 pub fn counterSpeed() u64 {
+    util.enableInterrupts();
     int.registerIRQ(0, pitHandler);
     pit.setDivisor(pit.max_divisor);
 
@@ -55,6 +56,7 @@ pub fn counterSpeed() u64 {
     const end = last_reading;
 
     int.registerIRQ(0, null);
+    util.disableInterrupts();
 
     const cycles = (end - start) / int_goal;
     return cycles * pit.min_hz;

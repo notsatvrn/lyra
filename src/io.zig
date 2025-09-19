@@ -61,20 +61,6 @@ pub inline fn out(comptime T: type, port: u16, value: T) void {
     }
 }
 
-// MEMORY-MAPPED I/O
-
-pub inline fn memIn(comptime T: type, addr: usize) T {
-    return @as(*const volatile T, @ptrFromInt(addr)).*;
-}
-
-pub inline fn memIns(comptime T: type, addr: usize, len: usize) [len]T {
-    return @as([*]volatile T, @ptrFromInt(addr))[0..len].*;
-}
-
-pub inline fn memOut(comptime T: type, addr: usize, value: T) void {
-    @as(*volatile T, @ptrFromInt(addr)).* = value;
-}
-
 // MODEL SPECIFIC REGISTERS
 
 pub inline fn rdmsr(msr: u32) u64 {

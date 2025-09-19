@@ -40,32 +40,23 @@ export fn stage1() noreturn {
         logger.info("- x2apic is supported", .{});
 
     memory.pmm.init();
-    memory.vmm.kernel.init();
-    memory.ready = true;
-
+    memory.vmm.init();
     tty.virtualize();
-
     acpi.init();
-    util.enableInterrupts();
     clock.init();
-    util.disableInterrupts();
-    rng.init();
+    rng.initBuffers();
     pci.init();
-
     smp.launch(stage2);
 }
 
 fn stage2() noreturn {
     const cpu = smp.getCpu();
-
-    memory.vmm.kernel.tables.get().load();
-    rng.clockEntropy();
-
+    memory.vmm.tables[cpu].load();
+    rng.initGenerator();
     // get all the entropy we can
-    if (cpu == 0) rng.cycleAllEntropy();
+    smp.runOnce(rng.cycleAllEntropy);
 
     logger.debug("cpu {} halting...", .{cpu});
-
     util.halt();
 }
 

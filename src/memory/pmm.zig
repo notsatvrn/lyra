@@ -220,10 +220,11 @@ pub fn init() void {
         s += 1;
     }
 
-    logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
-
     const minimum = pagesNeeded(128 * memory.MB, .small); // 128MiB required
     if (total < minimum) logger.panic("less than 128MiB memory available!", .{});
+
+    logger.info("{}/{} KiB used", .{ used() * 4, total * 4 });
+    memory.ready = true;
 }
 
 // REGION UTILITIES

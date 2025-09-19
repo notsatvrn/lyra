@@ -2,7 +2,6 @@
 
 const acpi = @import("../acpi.zig");
 const memory = @import("../memory.zig");
-const io = @import("../io.zig");
 
 const CAP_ID = 0x000;
 
@@ -37,21 +36,21 @@ pub fn check() bool {
 
     const addr = @as(*const acpi.Hpet, @ptrCast(@alignCast(uacpi_table.ptr.?))).address.address;
     // the HPET address is expected to be 4KiB boundary aligned, and the region is 1KiB
-    mapped = memory.vmm.kernel.mapSimple(addr, 1024, .{ .writable = true, .uncached = true });
+    mapped = memory.vmm.mapSimple(addr, 1024, .{ .writable = true, .uncached = true });
 
-    const basics = io.memIn(CapIdReg, mapped);
+    const basics = @as(*const CapIdReg, @ptrFromInt(mapped + CAP_ID)).*;
     return (basics.period > 0) and (basics.period <= 0x05F5E100) and basics.long_mode;
 }
 
 const COUNTER = 0x0F0;
 
 pub inline fn counter() u64 {
-    return io.memIn(u64, mapped + COUNTER);
+    return @as(*const u64, @ptrFromInt(mapped + COUNTER)).*;
 }
 
 pub fn counterSpeed() u64 {
     @as(*volatile ConfigReg, @ptrFromInt(mapped + CONFIG)).counter_enabled = true;
-    const period = io.memIn(CapIdReg, mapped + CAP_ID).period;
+    const period = @as(*const CapIdReg, @ptrFromInt(mapped + CAP_ID)).period;
     const fs_per_s: u64 = 1000 * 1000 * 1000 * 1000 * 1000;
     return fs_per_s / period;
 }

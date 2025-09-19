@@ -1,6 +1,6 @@
 # lyra
 
-Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.org/)
+Lyra is a UNIX-like hobby kernel for x86-64 UEFI systems, written in [Zig](https://ziglang.org/)
 
 ## Goals
 
@@ -14,17 +14,18 @@ Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.or
   - [x] paging
     - [x] read
     - [x] write
-  - [x] system clock
+  - [x] clock
     - [x] counter
-      - [x] invariant TSC
-      - [x] HPET
-    - [x] hw clock reading
+      - [x] tsc
+      - [x] hpet
+    - [x] real-time clock
   - [ ] interrupts
     - [x] pic driver
-    - [ ] apic driver
-  - [ ] smp
-    - [x] core id storage
-  - [x] pci device tree
+    - [ ] i/o apic driver
+    - [ ] local apic driver
+  - [ ] pci
+    - [x] device detection
+    - [ ] device access
 - abstractions
   - [ ] tty
     - [x] text mode backend
@@ -33,10 +34,11 @@ Lyra is a UNIX-like hobby kernel for x86-64, written in [Zig](https://ziglang.or
   - [x] memory
     - [x] pmm
     - [x] vmm
+  - [x] csprng
+    - [x] per-cpu generators
+    - [x] entropy pool
   - [ ] process scheduler
-    - [x] red-black tree impl
     - [ ] process structures
-    - [ ] smp awareness
 
 ## Credits
 

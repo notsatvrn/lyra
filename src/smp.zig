@@ -48,34 +48,30 @@ pub inline fn info() *const limine.Cpu {
     return limine.cpus.response.cpus[getCpu()];
 }
 
-// THREAD-LOCAL STORAGE
+pub inline fn count() usize {
+    return limine.cpus.response.count;
+}
+
+// TODO: add things like runNTimes, runOnCpu, etc
+fn funcReturnType(func: anytype) type {
+    const t_info = @typeInfo(@TypeOf(func));
+    const func_t = func_t: switch (t_info) {
+        .@"fn" => |v| v,
+        .pointer => |v| continue :func_t @typeInfo(v.child),
+        else => @compileError("non-function passed to call wrapper"),
+    };
+    const ReturnT = func_t.return_type orelse void;
+    return if (ReturnT != void) ?ReturnT else void;
+}
+
+pub inline fn runOnce(func: anytype) funcReturnType(func) {
+    if (getCpu() == 0) return (func)();
+    if (funcReturnType(func) != void) return null;
+}
+
+// CPU-LOCAL STORAGE
 
 const allocator = @import("memory.zig").allocator;
-
-pub fn LocalStorage(comptime T: type) type {
-    return struct {
-        objects: []T,
-
-        const Self = @This();
-
-        // INIT / DEINIT
-
-        pub fn init() !Self {
-            const n = limine.cpus.response.count;
-            return .{ .objects = try allocator.alloc(T, n) };
-        }
-
-        pub inline fn deinit(self: Self) void {
-            allocator.free(self.objects);
-        }
-
-        // GET
-
-        pub inline fn get(self: *Self) *T {
-            return &self.objects[getCpu()];
-        }
-    };
-}
 
 pub fn LockingStorage(comptime T: type) type {
     return struct {
