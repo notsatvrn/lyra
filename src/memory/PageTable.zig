@@ -7,9 +7,14 @@ const memory = @import("../memory.zig");
 const allocator = memory.page_allocator;
 const Size = memory.PageSize;
 
+top: *Table,
+pool: Pool = .{},
+
+const Self = @This();
+
 // STRUCTURES
 
-pub const PageTable = [512]Entry;
+pub const Table = [512]Entry;
 
 pub const Entry = packed struct(u64) {
     // zig fmt: off
@@ -69,18 +74,32 @@ pub const Entry = packed struct(u64) {
     }
 };
 
-pub const Pool = @import("object_pool.zig").ObjectPool(PageTable, .{});
+pub const Pool = @import("object_pool.zig").ObjectPool(Table, .{});
+
+// INIT / DEINIT
+
+pub inline fn init() !Self {
+    var self = Self{ .top = undefined };
+    self.top = try self.pool.create();
+    return self;
+}
+
+pub inline fn deinit(self: *Self) void {
+    self.unmap(0, std.math.maxInt(usize), .large);
+    self.pool.deinit();
+    self.* = undefined;
+}
 
 // LOAD/STORE PAGE TABLE POINTER
 
-pub inline fn load() *PageTable {
+pub inline fn load(self: *Self) void {
     var addr = util.getRegister(u64, "cr3");
     addr += limine.hhdm.response.offset;
-    return @ptrFromInt(addr);
+    self.top = @ptrFromInt(addr);
 }
 
-pub inline fn store(table: *const PageTable) void {
-    var addr: u64 = @intFromPtr(table);
+pub inline fn store(self: Self) void {
+    var addr: u64 = @intFromPtr(self.top);
     addr -= limine.hhdm.response.offset;
     util.setRegister(u64, "cr3", addr);
 }
@@ -95,14 +114,14 @@ inline fn index(level: u3, addr: usize) usize {
     return (addr >> shift(level)) & 0x1FF;
 }
 
-inline fn read(table: *const PageTable, level: u3, addr: usize) ?*const PageTable {
+inline fn read(table: *const Table, level: u3, addr: usize) ?*const Table {
     const entry = table[index(level, addr)];
     if (!entry.present) return null;
     return @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
 }
 
-pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
-    var table = top;
+pub fn physFromVirt(self: Self, addr: usize) ?usize {
+    var table = self.top;
 
     if (cpuid.features.pml5) // 5-level paging is enabled
         table = read(table, 5, addr) orelse return null;
@@ -125,7 +144,28 @@ pub fn physFromVirt(top: *const PageTable, addr: usize) ?usize {
 
 // WRITE PAGE TABLE
 
-pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usize, p: ?usize, size: Size, flags: Entry) !void {
+/// Map a section of virtual memory to a physical memory address. Unmaps if phys is null.
+pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: ?Entry) !void {
+    const size_mask = size.bytes() - 1;
+
+    var offset = virt & size_mask;
+    var phys_page: ?usize = null;
+    if (phys) |addr| {
+        // get offset from phys instead
+        offset = addr & size_mask;
+        phys_page = addr & ~size_mask;
+    }
+    const virt_page = virt & ~size_mask;
+    // offset + len, rounded up to a full page
+    const len_real = (offset + len + size_mask) & ~size_mask;
+    const end = virt_page + len_real - 1;
+
+    const clean_flags = (flags orelse Entry{}).getFlags(phys != null);
+    const level: u3 = @truncate(4 + limine.paging_mode.response.mode); // 1 = level 5
+    try mapRecursive(self.top, &self.pool, level, virt_page, end, phys_page, size, clean_flags);
+}
+
+fn mapRecursive(table: *Table, pool: *Pool, level: u3, s: usize, e: usize, p: ?usize, size: Size, flags: Entry) !void {
     const start_idx = index(level, s);
     const end_idx = index(level, e);
     const unmap = p == null;
@@ -167,7 +207,7 @@ pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usiz
                 try downmapEntry(entry, pool, flags, old_size, size);
             }
             // now we have a directory, and we can start mapping in it
-            const next_table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
+            const next_table: *Table = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
             try mapRecursive(next_table, pool, level - 1, start, end, phys, size, flags);
             start +|= entry_bytes;
             end = @min(e, end +| entry_bytes);
@@ -182,13 +222,13 @@ pub fn mapRecursive(table: *PageTable, pool: *Pool, level: u3, s: usize, e: usiz
 fn cleanEntry(entry: *Entry, pool: *Pool, size: Size) void {
     if (size == .small or entry.level.directory.huge) return;
     // we're changing this to a hugepage but it used to be a table
-    const table: *PageTable = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
+    const table: *Table = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
     defer pool.destroy(table);
     // large page level may have tables below it (4KiB -> 1GiB)
     if (size == .large) for (0..512) |i| {
         const e = &table[i];
         if (!e.present or e.level.directory.huge) continue;
-        const t: *PageTable = @ptrFromInt(e.getAddr() + limine.hhdm.response.offset);
+        const t: *Table = @ptrFromInt(e.getAddr() + limine.hhdm.response.offset);
         pool.destroy(t);
     };
 }
