@@ -28,16 +28,15 @@ export fn stage1() noreturn {
 
     tty.init();
 
-    logger.info("bootloader was {s} {s}", .{
-        limine.bootldr.response.name,
-        limine.bootldr.response.version,
-    });
+    logger.info("bootloader was {f}", .{limine.bootldr.response});
 
     logger.info("identify processor...", .{});
     cpuid.identify();
     logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
     if (cpuid.features.x2apic)
         logger.info("- x2apic is supported", .{});
+    if (cpuid.features.no_exec)
+        logger.info("- nx bit is supported", .{});
 
     memory.pmm.init();
     memory.vmm.init();

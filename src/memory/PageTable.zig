@@ -45,6 +45,9 @@ pub const Entry = packed struct(u64) {
     };
     // zig fmt: on
 
+    /// Default entry flags.
+    pub var default = Entry{};
+
     pub inline fn setAddr(self: *Entry, addr: usize) void {
         self.address = @truncate(addr >> 12);
     }
@@ -71,6 +74,11 @@ pub const Entry = packed struct(u64) {
         var flags = Entry{ .present = present };
         flags.setFlags(self);
         return flags;
+    }
+
+    /// Sets the executability of the entry (if possible).
+    pub inline fn setExecutable(self: *Entry, enable: bool) void {
+        self.no_exec = !enable and cpuid.features.no_exec;
     }
 };
 
@@ -149,20 +157,19 @@ pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags
     const size_mask = size.bytes() - 1;
 
     var offset = virt & size_mask;
-    var phys_page: ?usize = null;
+    var p_page: ?usize = null;
     if (phys) |addr| {
         // get offset from phys instead
         offset = addr & size_mask;
-        phys_page = addr & ~size_mask;
+        p_page = addr & ~size_mask;
     }
-    const virt_page = virt & ~size_mask;
-    // offset + len, rounded up to a full page
-    const len_real = (offset + len + size_mask) & ~size_mask;
-    const end = virt_page + len_real - 1;
+    const v_page = virt & ~size_mask;
+    const end = (v_page + offset +| len +| size_mask) & ~size_mask;
 
-    const clean_flags = (flags orelse Entry{}).getFlags(phys != null);
-    const level: u3 = @truncate(4 + limine.paging_mode.response.mode); // 1 = level 5
-    try mapRecursive(self.top, &self.pool, level, virt_page, end, phys_page, size, clean_flags);
+    const level = 4 + @as(u3, @intFromBool(cpuid.features.pml5));
+    // default to read-only and non-executable (if available) page flags
+    const clean_flags = (flags orelse Entry.default).getFlags(phys != null);
+    try mapRecursive(self.top, &self.pool, level, v_page, end, p_page, size, clean_flags);
 }
 
 fn mapRecursive(table: *Table, pool: *Pool, level: u3, s: usize, e: usize, p: ?usize, size: Size, flags: Entry) !void {

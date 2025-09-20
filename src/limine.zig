@@ -39,6 +39,10 @@ pub const BootloaderInfoResponse = extern struct {
     revision: u64 = 0,
     name: [*:0]const u8,
     version: [*:0]const u8,
+
+    pub fn format(self: BootloaderInfoResponse, writer: *std.Io.Writer) !void {
+        try writer.print("{s} {s}", .{ self.name, self.version });
+    }
 };
 
 // FRAMEBUFFER

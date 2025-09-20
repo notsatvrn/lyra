@@ -33,6 +33,9 @@ pub fn init() void {
     sets = memory.allocator.alloc(UsedSet, smp.count()) catch unreachable;
     const pages = (std.math.maxInt(usize) - offset) >> page_size.shift();
     for (sets) |*o| o.* = UsedSet.init(memory.allocator, pages) catch unreachable;
+
+    // default to non-executable paging
+    PageTable.Entry.default.setExecutable(false);
 }
 
 /// Picks a spot in memory after the kernel to map in. Uses small pages.

@@ -29,8 +29,9 @@ fn integerify(comptime str: []const u8) u96 {
 // FEATURES
 
 pub const Features = struct {
+    // paging
     pml5: bool,
-    hypervisor: bool,
+    no_exec: bool,
 
     // timing
     invariant_tsc: bool,
@@ -51,6 +52,9 @@ pub const Features = struct {
     // RNG
     rdrand: bool,
     rdseed: bool,
+
+    // miscellaneous
+    hypervisor: bool,
 };
 
 pub var features: Features = undefined;
@@ -140,9 +144,17 @@ pub fn identify() void {
               [_] "={edx}" (edx),
             : [_] "{eax}" (7),
             : .{ .eax = true });
-        // zig fmt: off
         features.rdseed = (ebx >> 18) & 1 == 1;
-        // zig fmt: on
+    }
+
+    // features on CPUID leaf 8000'0001h
+    {
+        var edx: u32 = undefined;
+        asm volatile ("cpuid"
+            : [_] "={edx}" (edx),
+            : [_] "{eax}" (0x8000_0001),
+            : .{ .eax = true, .ebx = true, .ecx = true });
+        features.no_exec = (edx >> 20) & 1 == 1;
     }
 
     // features on CPUID leaf 8000'0007h
