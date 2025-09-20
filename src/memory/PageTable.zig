@@ -98,6 +98,12 @@ pub inline fn deinit(self: *Self) void {
     self.* = undefined;
 }
 
+pub inline fn fromCurrent() Self {
+    var self = Self{ .top = undefined };
+    self.load();
+    return self;
+}
+
 // LOAD/STORE PAGE TABLE POINTER
 
 pub inline fn load(self: *Self) void {
@@ -156,35 +162,31 @@ pub fn physFromVirt(self: Self, addr: usize) ?usize {
 pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags: ?Entry) !void {
     const size_mask = size.bytes() - 1;
 
-    var offset = virt & size_mask;
+    var v_page = virt & ~size_mask;
     var p_page: ?usize = null;
-    if (phys) |addr| {
-        // get offset from phys instead
-        offset = addr & size_mask;
+    // if we have a physical address, set p_page
+    // then find our starting point for end
+    var end = if (phys) |addr| phys: {
+        const offset = addr & size_mask;
         p_page = addr & ~size_mask;
-    }
-    const v_page = virt & ~size_mask;
-    const end = (v_page + offset +| len +| size_mask) & ~size_mask;
+        break :phys v_page + offset;
+    } else virt;
+    // don't bother masking with ~size_mask here
+    // mapRecursive just ignores the lower bits
+    end +|= len + size_mask;
 
     const level = 4 + @as(u3, @intFromBool(cpuid.features.pml5));
+    const p_ptr: ?*usize = if (phys != null) &p_page.? else null;
     // default to read-only and non-executable (if available) page flags
     const clean_flags = (flags orelse Entry.default).getFlags(phys != null);
-    try mapRecursive(self.top, &self.pool, level, v_page, end, p_page, size, clean_flags);
+    try mapRecursive(self.top, &self.pool, level, &v_page, end, p_ptr, size, clean_flags);
 }
 
-fn mapRecursive(table: *Table, pool: *Pool, level: u3, s: usize, e: usize, p: ?usize, size: Size, flags: Entry) !void {
-    const start_idx = index(level, s);
-    const end_idx = index(level, e);
-    const unmap = p == null;
-
+fn mapRecursive(table: *Table, pool: *Pool, level: u3, start: *usize, end: usize, phys: ?*usize, size: Size, flags: Entry) !void {
+    const unmap = phys == null;
+    const start_idx = index(level, start.*);
+    const end_idx = index(level, end);
     const entry_bytes = @as(usize, 1) << shift(level);
-    const entry_mask = entry_bytes - 1;
-    var phys = p;
-    var start = s;
-    // round start up to nearest entry_bytes for end
-    var end = (s +% entry_mask) & ~entry_mask;
-    // fix overflow and don't go past e
-    if (end <= s or end > e) end = e;
 
     for (start_idx..end_idx + 1) |i| {
         const entry = &table[i];
@@ -195,11 +197,10 @@ fn mapRecursive(table: *Table, pool: *Pool, level: u3, s: usize, e: usize, p: ?u
                 entry.present = true;
                 entry.setFlags(flags);
                 entry.level.directory.huge = size != .small;
-                entry.setAddr(phys.?);
-            } else {
-                entry.* = .{};
-                continue;
-            }
+                entry.setAddr(phys.?.*);
+                phys.?.* += entry_bytes;
+            } else entry.* = .{};
+            start.* += entry_bytes;
         } else {
             if (!entry.present) {
                 if (unmap) continue;
@@ -215,13 +216,8 @@ fn mapRecursive(table: *Table, pool: *Pool, level: u3, s: usize, e: usize, p: ?u
             }
             // now we have a directory, and we can start mapping in it
             const next_table: *Table = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
-            try mapRecursive(next_table, pool, level - 1, start, end, phys, size, flags);
-            start +|= entry_bytes;
-            end = @min(e, end +| entry_bytes);
-            if (unmap) continue;
+            try mapRecursive(next_table, pool, level - 1, start, start.* +| entry_bytes, phys, size, flags);
         }
-        // phys can't be null
-        phys.? +|= entry_bytes;
     }
 }
 
@@ -259,7 +255,7 @@ fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) 
             bottom.level.directory.huge = to == .medium;
             for (0..512) |i| {
                 table[i] = bottom;
-                bottom.address +|= offset;
+                bottom.address += offset;
             }
         },
         // 1GiB -> 4KiB
@@ -270,7 +266,7 @@ fn downmapEntry(entry: *Entry, pool: *Pool, flags: Entry, from: Size, to: Size) 
                 table[i].setAddr(@intFromPtr(&tables[i]));
                 for (0..512) |j| {
                     tables[i][j] = bottom;
-                    bottom.address +|= 1;
+                    bottom.address += 1;
                 }
             }
         },

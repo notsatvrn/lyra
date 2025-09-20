@@ -16,7 +16,9 @@ tail: usize = 0,
 const Self = @This();
 
 pub inline fn init(allocator: std.mem.Allocator, size: usize) !Self {
-    return .{ .ptr = (try allocator.alloc(u64, (size + 63) / 64)).ptr, .len = size };
+    const buffer = try allocator.alloc(u64, (size + 63) / 64);
+    std.crypto.secureZero(u64, buffer);
+    return .{ .ptr = buffer.ptr, .len = size };
 }
 
 pub inline fn deinit(self: Self, allocator: std.mem.Allocator) void {
@@ -69,13 +71,14 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
 
     // modify bits at the start
     const ints_start = (start + 63) / 64;
-    const start_bits = @min(n, (ints_start * 64) - start);
+    const start_bits = (ints_start * 64) - start;
     if (start_bits > 0) {
         const start_int = start / 64;
-        const start_mask = mkmask(start_bits, start - (start_int * 64));
+        const bits = @min(n, start_bits);
+        const start_mask = mkmask(bits, start - (start_int * 64));
         res += self.applyMask(start_int, start_mask, op);
         // only needed to modify bits of one integer
-        if (start_bits == n) return self.opret(n, res, op);
+        if (start_bits >= n) return self.opret(n, res, op);
     }
 
     // modify bits at the end
@@ -271,11 +274,16 @@ pub fn unclaimRange(self: *Self, start: usize, n: usize) void {
     assert(start + n < self.len);
     // unset bits and reclaim in-use
     self.operation(start, n, .unset);
+    // fast path: set was fully freed
+    if (self.used == 0) {
+        self.tail = 0;
+        return;
+    }
     // if this isn't tail range, return
     if (start + n != self.tail) return;
     // backtrack if range is from tail
     var tail = start / 64;
-    while (tail >= 0) : (tail -= 1) {
+    while (true) : (tail -= 1) {
         const int = self.ptr[tail];
         if (int != 0) {
             self.tail = ((tail + 1) * 64) - @clz(int);

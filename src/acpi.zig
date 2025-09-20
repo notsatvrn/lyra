@@ -23,7 +23,7 @@ export fn uacpi_kernel_map(phys: c.uacpi_phys_addr, len: c.uacpi_size) callconv(
     return @ptrFromInt(memory.vmm.mapSimple(phys, len, .{ .writable = true }));
 }
 export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.c) void {
-    memory.vmm.map(null, @intFromPtr(virt), len, .small, .{});
+    memory.vmm.unmapSimple(@intFromPtr(virt), len);
 }
 
 export fn uacpi_kernel_log(

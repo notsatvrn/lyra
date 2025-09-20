@@ -25,14 +25,11 @@ pub fn init() void {
     offset = (kaddr + ksize + page_mask) & ~page_mask;
 
     tables = memory.allocator.alloc(PageTable, smp.count()) catch unreachable;
-    for (tables) |*t| {
-        t.* = .{ .top = undefined };
-        t.load();
-    }
+    for (tables) |*t| t.* = PageTable.fromCurrent();
 
     sets = memory.allocator.alloc(UsedSet, smp.count()) catch unreachable;
     const pages = (std.math.maxInt(usize) - offset) >> page_size.shift();
-    for (sets) |*o| o.* = UsedSet.init(memory.allocator, pages) catch unreachable;
+    for (sets) |*s| s.* = UsedSet.init(memory.allocator, pages) catch unreachable;
 
     // default to non-executable paging
     PageTable.Entry.default.setExecutable(false);
@@ -55,6 +52,23 @@ pub fn mapSimple(phys: usize, len: usize, flags: ?PageTable.Entry) usize {
     return virt;
 }
 
+/// Unmaps a section of memory mapped with mapSimple().
+/// This should be used instead of unmapping with map().
+pub fn unmapSimple(virt: usize, len: usize) void {
+    const set = &sets[smp.getCpu()];
+    const pages = memory.pagesNeeded(len, .small);
+    const start = (virt - offset) / page_size.bytes();
+    _ = set.unclaimRange(start, pages);
+
+    map(null, virt, len, .small, null);
+
+    if (!smp.launched) {
+        @branchHint(.unlikely);
+        for (1..smp.count()) |cpu| _ = sets[cpu].unclaimRange(start, pages);
+    }
+}
+
+/// Map a section of kernel virtual memory to a physical memory address. Unmaps if phys is null.
 pub fn map(phys: ?usize, virt: usize, len: usize, size: memory.PageSize, flags: ?PageTable.Entry) void {
     const current = smp.getCpu();
     const table = &tables[current];
