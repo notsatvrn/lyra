@@ -28,9 +28,9 @@ Lyra is a UNIX-like hobby kernel for x86-64 UEFI systems, written in [Zig](https
     - [ ] device access
 - abstractions
   - [ ] tty
-    - [x] text mode backend
-    - [x] framebuffer backend
+    - [x] basic rendering
     - [ ] ansi escape codes
+    - [ ] custom font sizes
   - [x] memory
     - [x] pmm
     - [x] vmm

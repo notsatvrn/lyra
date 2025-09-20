@@ -82,12 +82,12 @@ fn benchRandom(comptime iters: usize, comptime divisor: usize) void {
                     pages = @intFromFloat(pages_f);
                 }
                 bytes_total += pages * page_bytes;
-                storage[i] = .{ memory.pmm.map(.small, pages).?, pages };
+                storage[i] = .{ memory.pmm.map(.@"1", .small, pages).?, pages };
             }
             for (0..divisor) |i| {
                 const ptr = storage[table[i]][0];
                 const pages = storage[table[i]][1];
-                _ = memory.pmm.unmap(ptr, .small, pages);
+                _ = memory.pmm.unmap(ptr, .@"1", .small, pages);
             }
         }
     }
@@ -121,10 +121,10 @@ fn benchSeqRand(comptime pages: usize) void {
     for (0..outer_iter) |j| {
         const table = tables[j];
         for (0..size_seq) |i|
-            storage[i] = memory.pmm.map(.small, pages) orelse
+            storage[i] = memory.pmm.map(.@"1", .small, pages) orelse
                 logger.panic("failed to allocate page", .{});
         for (0..size_seq) |i|
-            _ = memory.pmm.unmap(storage[table[i]], .small, pages);
+            _ = memory.pmm.unmap(storage[table[i]], .@"1", .small, pages);
     }
     const end = clock.nanoSinceBoot();
 

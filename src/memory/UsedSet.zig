@@ -68,11 +68,11 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
     var res: usize = 0;
 
     // modify bits at the start
-    const start_offset = start % 64;
-    const start_bits = @min(n, 64 - start_offset);
+    const ints_start = (start + 63) / 64;
+    const start_bits = @min(n, (ints_start * 64) - start);
     if (start_bits > 0) {
         const start_int = start / 64;
-        const start_mask = mkmask(start_bits, start_offset);
+        const start_mask = mkmask(start_bits, start - (start_int * 64));
         res += self.applyMask(start_int, start_mask, op);
         // only needed to modify bits of one integer
         if (start_bits == n) return self.opret(n, res, op);
@@ -86,11 +86,10 @@ fn operation(self: *Self, start: usize, n: usize, comptime op: Operation) if (op
         const end_mask = mkmask(end_bits, 0);
         res += self.applyMask(ints_end, end_mask, op);
         // only needed to modify bits of two integers
-        if (start_bits + end_bits == n) return self.opret(n, res, op);
+        if (ints_end <= ints_start) return self.opret(n, res, op);
     }
 
     // modify integers in between
-    const ints_start = (start + 63) / 64;
     switch (op) {
         .set => @memset(self.ptr[ints_start..ints_end], ~@as(u64, 0)),
         .unset => for (ints_start..ints_end) |i| {
