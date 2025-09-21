@@ -37,7 +37,6 @@ export fn stage1() noreturn {
     clock.init();
     rng.initBuffers();
     pci.init();
-    pci.print();
     logger.info("entering stage 2", .{});
     barrier = .init(0);
     smp.launch(stage2);

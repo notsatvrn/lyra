@@ -149,14 +149,14 @@ pub fn init() void {
     var largest: []u8 = "";
     var bitsets_size: usize = 0;
 
-    logger.info("memory regions: ", .{});
+    logger.debug("memory regions: ", .{});
     for (0..limine.mmap.response.count) |i| {
         const entry = limine.mmap.response.entries[i];
         if (entry.type != .usable) continue;
 
         const addr = @intFromPtr(entry.ptr);
         const pages = entry.len >> PageSize.small.shift();
-        logger.info("- 0x{X:0>16}, {} pages", .{ addr, pages });
+        logger.debug("- 0x{X:0>16}, {} pages", .{ addr, pages });
         // bitset implementation requires 64-bit alignment
         bitsets_size += (pages + 63) / 64;
         // put the address in Limine's higher-half direct map

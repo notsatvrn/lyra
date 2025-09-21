@@ -54,10 +54,15 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 const smp = @import("smp.zig");
 
+/// Configurable minimum log level.
+pub var min_level = Level.info;
+
 pub const Logger = struct {
     name: []const u8,
 
     inline fn log(self: Logger, comptime level: Level, comptime fmt: []const u8, args: anytype) void {
+        if (@intFromEnum(level) > @intFromEnum(min_level)) return;
+
         var color: colors.Basic = .light_green;
         var str: []const u8 = "INFO ";
 

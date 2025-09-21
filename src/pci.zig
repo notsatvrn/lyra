@@ -24,24 +24,6 @@ fn cmpLoc(a: Location, b: Location) std.math.Order {
 pub const Devices = TreeMap(Location, Info, cmpLoc, .avl, true);
 pub var devices = Devices.init(memory.allocator);
 
-pub inline fn print() void {
-    var iterator = devices.iterator(memory.allocator);
-    logger.debug("devices:", .{});
-
-    while (iterator.next() catch unreachable) |device| {
-        logger.debug("- {x:0>2}:{x:0>2}.{x} -> {x:0>4}:{x:0>4} (0x{x:0>6})", .{
-            device.key.bus,
-            device.key.slot,
-            device.key.func,
-            device.value.desc.vendor,
-            device.value.desc.device,
-            @as(u24, @bitCast(device.value.class)),
-        });
-    }
-
-    iterator.deinit();
-}
-
 // CONFIGURATION SPACE (ACCESS MECHANISM #1)
 // https://osdev.wiki/wiki/PCI#Configuration_Space_Access_Mechanism_#1
 
@@ -76,6 +58,7 @@ inline fn configRead(comptime T: type, location: Location, offset: u8) T {
 }
 
 pub fn init() void {
+    logger.debug("devices:", .{});
     const num = detectBus(0) catch unreachable;
     logger.info("found {} devices", .{num});
 }
@@ -103,6 +86,9 @@ fn detectBus(bus: u8) std.mem.Allocator.Error!usize {
                 .subclass = configRead(u8, location, 10),
                 .interface = configRead(u8, location, 9),
             };
+
+            const params = .{ bus, slot, func, vendor, device, @as(u24, @bitCast(class)) };
+            logger.debug("- {x:0>2}:{x:0>2}.{x} -> {x:0>4}:{x:0>4} (0x{x:0>6})", params);
 
             const desc = Descriptor{ .vendor = vendor, .device = device };
             try devices.put(location, .{ .desc = desc, .class = class });
