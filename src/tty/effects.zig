@@ -155,8 +155,8 @@ pub const Command = union(enum) {
         },
 
         pub fn format(self: Sgr, writer: *std.Io.Writer) !void {
-            try switch (self) {
-                .reset => writer.writeByte('0'),
+            return switch (self) {
+                .reset => {},
                 .set_effect => |v| writer.print("{f}", .{v}),
                 .unset_effect => |v| writer.print("{}", .{v.unsetCode()}),
                 .set_color => |v| writeSetColor(writer, v.part, v.color),
@@ -183,8 +183,6 @@ pub const Command = union(enum) {
         }
 
         pub fn parse(buffer: []const u8) ?std.ArrayList(Sgr) {
-            if (buffer.len == 0) return null;
-
             var iterator = std.mem.SplitIterator(u8, .scalar){
                 .buffer = buffer,
                 .delimiter = ';',
@@ -425,6 +423,8 @@ pub const Parser = struct {
             } else null,
             // select graphic rendition
             'm' => if (self.csi) {
+                // CSI m is an alias of CSI 0 m, which is the reset command
+                if (self.buffer.items.len == 0) break :parser .{ .sgr = .reset };
                 const sgr = Command.Sgr.parse(self.buffer.items) orelse break :parser null;
                 break :parser .{ .multi_sgr = sgr };
             } else null,
