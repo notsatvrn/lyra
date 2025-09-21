@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Hsl = packed struct {
+pub const Hsl = struct {
     h: f64,
     s: f64,
     l: f64,
@@ -27,7 +27,7 @@ pub const Hsl = packed struct {
     }
 };
 
-pub const Rgb = struct {
+pub const Rgb = packed struct(u36) {
     r: u12,
     g: u12,
     b: u12,

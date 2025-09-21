@@ -114,10 +114,47 @@ pub const Effects = struct {
 
 const memory = @import("../memory.zig");
 
-pub const Ansi = union(enum) {
+pub const Command = union(enum) {
+    move_v: Movement,
+    move_h: Movement,
+    move_line: Movement,
+    move_column: usize,
+    move_absolute: struct {
+        row: usize = 1,
+        col: usize = 1,
+    },
+    erase_display: u2,
+    erase_line: u2,
+    scroll: Movement,
     sgr: Sgr,
+    report_cursor,
+    cursor_pos_store: CursorPosStore,
+    // true to show it
+    cursor_visible: bool,
 
-    // Set Graphics Rendition
+    // movement commands
+
+    pub const Movement = struct {
+        distance: usize = 1,
+        // for vertical, down is true
+        forward: bool = false,
+        can_scroll: bool = false,
+    };
+
+    // cursor position storage commands
+
+    pub const CursorPosStore = struct {
+        restore: bool,
+        // if false, use SCO format
+        dec: bool = false,
+
+        pub fn char(self: CursorPosStore) u8 {
+            if (self.dec) return if (self.restore) '8' else '7';
+            return if (self.restore) 'u' else 's';
+        }
+    };
+
+    // Select Graphic Rendition
 
     pub const Sgr = union(enum) {
         reset,
@@ -133,59 +170,245 @@ pub const Ansi = union(enum) {
                 .unset_effect => |v| try writer.print("{}", .{v.unsetCode()}),
             }
         }
+
+        pub fn parse(buffer: []const u8) ?Sgr {
+            _ = buffer;
+            return null;
+        }
     };
 
     // rest of the implementation
 
     pub const esc = '\x1B';
 
-    pub fn format(self: Ansi, writer: *std.Io.Writer) !void {
+    pub fn format(self: Command, writer: *std.Io.Writer) !void {
         if (!memory.ready) return;
 
         try writer.writeByte(esc);
-        switch (self) {
-            .sgr => |v| try writer.print("[{f}m", .{v}),
-        }
+        // Control Sequence Introducer -
+        // cursor pos store w/ DEC format
+        // does not have the CSI character
+        if (self != .cursor_pos_store or
+            !self.cursor_pos_store.dec)
+            try writer.writeByte('[');
+
+        try switch (self) {
+            .move_v => |v| writer.print("{}{c}", .{ v.distance, @as(u8, if (v.forward) 'B' else 'A') }),
+            .move_h => |v| writer.print("{}{c}", .{ v.distance, @as(u8, if (v.forward) 'C' else 'D') }),
+            .move_line => |v| writer.print("{}{c}", .{ v.distance, @as(u8, if (v.forward) 'E' else 'F') }),
+            .move_column => |v| writer.print("{}G", .{v}),
+            .move_absolute => |v| writer.print("{};{}H", .{ v.row, v.col }),
+            .erase_display => |v| writer.print("{}J", .{v}),
+            .erase_line => |v| writer.print("{}K", .{v}),
+            .scroll => |v| writer.print("{}{c}", .{ v.distance, @as(u8, if (v.forward) 'T' else 'S') }),
+            .sgr => |v| writer.print("{f}m", .{v}),
+            .report_cursor => writer.writeAll("6n"),
+            .cursor_pos_store => |v| writer.writeByte(v.char()),
+            .cursor_visible => |v| writer.print("25{c}", .{@as(u8, if (v) 'h' else 'l')}),
+        };
     }
 
     // quick constructors
 
-    pub const reset = Ansi{ .sgr = .reset };
+    pub const reset = Command{ .sgr = .reset };
 
-    pub inline fn setColor(part: ColorPart, color: Color) Ansi {
+    pub inline fn setColor(part: ColorPart, color: Color) Command {
         return .{ .sgr = .{ .set_color = .{ .part = part, .color = color } } };
     }
 };
 
-// ANSI ESCAPE CODE PARSER
-
-// The ANSI escape parser used by all TTY implementations
-pub const AnsiParser = struct {
-    parsing: ?Parsing = null,
+// https://en.wikipedia.org/wiki/ANSI_escape_code
+// https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+pub const Parser = struct {
     nop: bool = false,
+    parsing: bool = false,
+    csi: bool = false,
+    buffer: std.ArrayList(u8) = .{},
+    parsed: ?Command = null,
 
     const Self = @This();
 
-    const Parsing = struct {
-        buffer: std.ArrayList(u8),
-    };
+    pub fn parse(self: *Self, char: u8) bool {
+        if (!self.parsing) {
+            @branchHint(.likely);
+            if (char == Command.esc) {
+                self.buffer.ensureTotalCapacity(memory.allocator, 32) catch unreachable;
+                self.buffer.clearRetainingCapacity();
+                self.parsing = true;
+                return true;
+            } else return false;
+        }
 
-    pub fn checkChar(self: *Self, char: u8) bool {
-        if (self.parsing) |*p| {
-            _ = p;
-            // TODO: for now it's always a nop, but we need a parser
-            if (self.nop or true) {
-                switch (char) {
-                    'A', 'B', 'C', 'D', 'E', 'F', 'f', 'G', 'H', 'h', 'i', 'J', 'K', 'l', 'm', 'n', 'S', 's', 'T', 'u' => self.parsing = null,
-                    else => {},
-                }
+        if (self.nop or !memory.ready) {
+            switch (char) {
+                'A', 'B', 'C', 'D', 'E', 'F', 'f', 'G', 'H', 'h', 'i', 'J', 'K', 'l', 'm', 'n', 'S', 's', 'T', 'u' => self.parsing = false,
+                else => {},
             }
-        } else if (char == Ansi.esc) {
-            self.parsing = .{
-                .buffer = std.ArrayList(u8).initCapacity(memory.allocator, 16) catch return true,
-            };
-        } else return false;
+            return true;
+        }
+
+        parser: switch (char) {
+            // Control Sequence Introducer
+            '[' => {
+                if (self.buffer.items.len != 0) {
+                    self.reset();
+                    return true;
+                }
+                self.csi = true;
+            },
+
+            // CSI COMMANDS
+
+            // single number movement commands
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'S', 'T' => |c| if (!self.csi) self.reset() else {
+                var movement = Command.Movement{};
+                movement.distance = std.fmt.parseInt(usize, self.buffer.items, 10) catch {
+                    self.reset();
+                    return true;
+                };
+                movement.forward = switch (c) {
+                    'B', 'C', 'E', 'T' => true,
+                    else => false,
+                };
+                self.parsed = switch (c) {
+                    'A', 'B' => .{ .move_v = movement },
+                    'C', 'D' => .{ .move_h = movement },
+                    'E', 'F' => .{ .move_line = movement },
+                    'G' => .{ .move_column = movement.distance },
+                    'S', 'T' => .{ .scroll = movement },
+                    else => unreachable,
+                };
+                self.reset();
+            },
+            // move cursor absolute
+            'H', 'f' => if (!self.csi) self.reset() else {
+                self.parsed = .{ .move_absolute = .{} };
+                const len = self.buffer.items.len;
+                if (len == 0) {
+                    self.reset();
+                    return true;
+                }
+                // only column is set
+                if (self.buffer.items[0] == ';') {
+                    self.parsed.?.move_absolute.col =
+                        std.fmt.parseInt(usize, self.buffer.items[1..], 10) catch {
+                            self.parsed = null;
+                            break :parser self.reset();
+                        };
+                    self.reset();
+                    return true;
+                }
+                var i: usize = 0;
+                while (i < len and self.buffer.items[i] != ';') i += 1;
+                self.parsed.?.move_absolute.row =
+                    std.fmt.parseInt(usize, self.buffer.items[0..i], 10) catch {
+                        self.parsed = null;
+                        break :parser self.reset();
+                    };
+                // only row is set
+                if (i == len) {
+                    self.reset();
+                    return true;
+                }
+                // both row and column set
+                self.parsed.?.move_absolute.col =
+                    std.fmt.parseInt(usize, self.buffer.items[i + 1 ..], 10) catch {
+                        self.parsed = null;
+                        self.reset();
+                        return true;
+                    };
+                self.reset();
+            },
+            // erase commands
+            'J', 'K' => |c| if (!self.csi) self.reset() else {
+                var value: u2 = 0;
+                if (self.buffer.items.len > 0)
+                    value = std.fmt.parseInt(u2, self.buffer.items, 10) catch {
+                        self.reset();
+                        return true;
+                    };
+                // u2 holds up to 3, but Erase in Line is from 0-2
+                if (c == 'K' and value == 3) {
+                    self.reset();
+                    return true;
+                }
+                self.parsed = switch (c) {
+                    'J' => .{ .erase_display = value },
+                    'K' => .{ .erase_line = value },
+                    else => unreachable,
+                };
+                self.reset();
+            },
+            // select graphic rendition
+            'm' => if (!self.csi) self.reset() else {
+                const sgr = Command.Sgr.parse(self.buffer.items) orelse {
+                    self.reset();
+                    return true;
+                };
+                self.parsed = .{ .sgr = sgr };
+            },
+            // report cursor position
+            'n' => if (!self.csi) self.reset() else {
+                if (self.buffer.items.len != 0 or
+                    self.buffer.items[0] != '6')
+                {
+                    self.reset();
+                    return true;
+                }
+                self.parsed = .report_cursor;
+            },
+            // save/restore cursor position (SCO)
+            's', 'u' => |c| if (!self.csi) self.reset() else {
+                if (self.buffer.items.len > 0) {
+                    self.reset();
+                    return true;
+                }
+                self.parsed = .{ .cursor_pos_store = .{ .restore = c == 'u' } };
+            },
+            // show/hide cursor
+            'h', 'l' => |c| if (!self.csi) self.reset() else {
+                const len = self.buffer.items.len;
+                if (len < 2 or
+                    self.buffer.items[len - 2] != '2' or
+                    self.buffer.items[len - 1] != '5')
+                {
+                    self.reset();
+                    return true;
+                }
+                self.parsed = .{ .cursor_visible = c == 'h' };
+                self.reset();
+            },
+
+            // NON-CSI COMMANDS
+
+            // move cursor up one line, scroll if needed
+            'M' => if (self.csi) self.reset() else {
+                if (self.buffer.items.len != 0) {
+                    self.reset();
+                    return true;
+                }
+                // default distance is 1, default direction is up
+                self.parsed = .{ .move_v = .{ .can_scroll = true } };
+            },
+            // save/restore cursor position (DEC)
+            '7', '8' => |c| if (self.csi) self.reset() else {
+                if (self.buffer.items.len > 0) {
+                    self.reset();
+                    return true;
+                }
+                self.parsed = .{ .cursor_pos_store = .{ .dec = true, .restore = c == '8' } };
+            },
+
+            // TODO: we need to do something on overflow
+            else => self.buffer.append(memory.allocator, char) catch unreachable,
+        }
 
         return true;
+    }
+
+    inline fn reset(self: *Self) void {
+        self.buffer.clearRetainingCapacity();
+        self.parsing = false;
+        self.csi = false;
     }
 };

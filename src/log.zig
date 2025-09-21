@@ -3,7 +3,7 @@ const Level = std.log.Level;
 
 pub const tty = @import("tty.zig");
 pub const colors = tty.colors;
-pub const Ansi = tty.effects.Ansi;
+pub const Ansi = tty.effects.Command;
 
 const Lock = @import("utils").lock.SpinLock;
 const nanoSinceBoot = @import("clock.zig").nanoSinceBoot;

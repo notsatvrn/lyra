@@ -12,7 +12,6 @@ const Rgb = colors.Rgb;
 
 pub const effects = @import("tty/effects.zig");
 pub const ColorPart = effects.ColorPart;
-pub const Ansi = effects.Ansi;
 
 const limine = @import("limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
@@ -234,7 +233,6 @@ pub inline fn addOutput(buf: Framebuffer) !void {
 
 const Basic = colors.Basic;
 const Effects = effects.Effects;
-const AnsiParser = effects.AnsiParser;
 
 pub var state = State{};
 
@@ -245,7 +243,7 @@ pub const State = struct {
     current: Colors = .init(&colors.palette16),
     effects: Effects = .{},
     palette: [16]Rgb = colors.palette16,
-    ansi: AnsiParser = .{},
+    ansi: effects.Parser = .{},
     unicode: UnicodeParser = .{},
 
     pub const Colors = struct {
@@ -314,8 +312,22 @@ pub const State = struct {
     const Self = @This();
 
     pub fn parse(self: *Self, char: u8) ?u21 {
-        if (self.ansi.checkChar(char)) return null;
+        if (self.ansi.parse(char)) {
+            if (self.ansi.parsed) |cmd| {
+                self.processCommand(cmd);
+                self.ansi.parsed = null;
+            }
+            return null;
+        }
         return self.unicode.parse(char);
+    }
+
+    pub fn processCommand(self: *Self, command: effects.Command) void {
+        _ = self;
+        switch (command) {
+            // TODO: handle commands
+            else => {},
+        }
     }
 
     pub fn getColor(self: Self, comptime part: ColorPart) Rgb {
