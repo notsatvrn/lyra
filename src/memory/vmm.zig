@@ -16,8 +16,8 @@ pub var tables: []PageTable = undefined;
 pub var sets: []UsedSet = undefined;
 var offset: usize = 0;
 
-const page_size = memory.PageSize.small;
-const page_mask = page_size.bytes() - 1;
+const page_size = memory.min_page_size;
+const page_mask = page_size - 1;
 
 pub fn init() void {
     // start mapping right after kernel
@@ -29,7 +29,7 @@ pub fn init() void {
     for (tables) |*t| t.* = PageTable.fromCurrent();
 
     sets = memory.allocator.alloc(UsedSet, smp.count()) catch unreachable;
-    const pages = (std.math.maxInt(usize) - offset) >> page_size.shift();
+    const pages = (std.math.maxInt(usize) - offset) / page_size;
     for (sets) |*s| s.* = UsedSet.init(memory.allocator, pages) catch unreachable;
 
     // default to non-executable paging
@@ -45,7 +45,7 @@ pub fn mapSimple(phys: usize, len: usize, flags: ?PageTable.Entry) usize {
     const set = &sets[smp.getCpu()];
     const pages = memory.pagesNeeded(len, .small);
     const start = set.claimRange(pages) orelse return 0;
-    const virt = offset + start * page_size.bytes();
+    const virt = offset + start * page_size;
 
     map(phys, virt, len, .small, flags);
 
@@ -62,7 +62,7 @@ pub fn mapSimple(phys: usize, len: usize, flags: ?PageTable.Entry) usize {
 pub fn unmapSimple(virt: usize, len: usize) void {
     const set = &sets[smp.getCpu()];
     const pages = memory.pagesNeeded(len, .small);
-    const start = (virt - offset) / page_size.bytes();
+    const start = (virt - offset) / page_size;
     _ = set.unclaimRange(start, pages);
 
     map(null, virt, len, .small, null);

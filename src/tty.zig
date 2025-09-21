@@ -248,20 +248,20 @@ pub const State = struct {
 
     pub const Colors = struct {
         foreground: Rgb,
-        dim_foreground: Rgb,
+        faint_foreground: Rgb,
         underline: Rgb,
-        dim_underline: Rgb,
+        faint_underline: Rgb,
         background: Rgb,
 
         pub fn init(palette: *const [16]Rgb) Colors {
             const fg = palette[@intFromEnum(Basic.light_gray)];
             const bg = palette[@intFromEnum(Basic.black)];
-            const dim_fg = fg.mix(bg, 0.75);
+            const faint_fg = fg.mix(bg, 0.75);
             return .{
                 .foreground = fg,
-                .dim_foreground = dim_fg,
+                .faint_foreground = faint_fg,
                 .underline = fg,
-                .dim_underline = dim_fg,
+                .faint_underline = faint_fg,
                 .background = bg,
             };
         }
@@ -273,14 +273,6 @@ pub const State = struct {
         active: bool = false,
 
         pub fn parse(self: *UnicodeParser, char: u8) ?u21 {
-            if (!self.active or char < 128) {
-                // applications will mostly be
-                // outputting ASCII characters
-                @branchHint(.likely);
-                self.index = 0;
-                return char;
-            }
-
             self.buffer[self.index] = char;
             self.index +%= 1;
 
@@ -292,14 +284,11 @@ pub const State = struct {
                 else => return null,
             };
 
-            if (index != self.index) {
-                // applications will mostly be
-                // outputting valid UTF-8
-                @branchHint(.unlikely);
-                self.index = 0;
+            // need more characters first
+            if (self.index < index)
                 return null;
-            }
 
+            defer self.index = 0;
             return switch (index) {
                 1 => std.unicode.utf8Decode2(self.buffer[0..2].*) catch null,
                 2 => std.unicode.utf8Decode3(self.buffer[0..3].*) catch null,
@@ -313,28 +302,61 @@ pub const State = struct {
 
     pub fn parse(self: *Self, char: u8) ?u21 {
         if (self.ansi.parse(char)) {
+            // applications will mostly be
+            // outputting ASCII characters
+            @branchHint(.unlikely);
             if (self.ansi.parsed) |cmd| {
                 self.processCommand(cmd);
                 self.ansi.parsed = null;
             }
             return null;
         }
-        return self.unicode.parse(char);
+        if (char >= 128 and self.unicode.active) {
+            // applications will mostly be
+            // outputting ASCII characters
+            @branchHint(.unlikely);
+            return self.unicode.parse(char);
+        } else self.unicode.index = 0;
+        return char;
     }
 
     pub fn processCommand(self: *Self, command: effects.Command) void {
-        _ = self;
         switch (command) {
-            // TODO: handle commands
+            .sgr => |sgr| self.processSgr(sgr),
+            .multi_sgr => |list| for (list.items) |sgr| {
+                self.processSgr(sgr);
+            },
+            // TODO: handle more commands
             else => {},
+        }
+    }
+
+    fn processSgr(self: *Self, sgr: effects.Command.Sgr) void {
+        switch (sgr) {
+            .reset => {
+                self.resetColor(.foreground);
+                self.resetColor(.background);
+                self.resetColor(.underline);
+            },
+            .set_effect => |v| switch (v) {
+                .underline => |u| self.effects.set(.underline, u),
+                inline else => |_, e| self.effects.set(e, true),
+            },
+            .unset_effect => |v| switch (v) {
+                .underline => self.effects.set(.underline, null),
+                inline else => |e| self.effects.set(e, false),
+            },
+            .set_color => |v| switch (v.part) {
+                inline else => |part| self.setColor(part, v.color),
+            },
         }
     }
 
     pub fn getColor(self: Self, comptime part: ColorPart) Rgb {
         if (part == .background) return self.current.background;
 
-        const dim = self.effects.get(.dim);
-        if (dim) return @field(self.current, "dim_" ++ @tagName(part));
+        const faint = self.effects.get(.faint);
+        if (faint) return @field(self.current, "faint_" ++ @tagName(part));
         return @field(self.current, @tagName(part));
     }
 
@@ -349,24 +371,25 @@ pub const State = struct {
         };
     }
 
-    pub fn setColor(self: *Self, comptime part: ColorPart, c: Color) void {
+    pub fn setColor(self: *Self, comptime part: ColorPart, color: ?Color) void {
+        const c = color orelse return self.resetColor(part);
         @field(self.current, @tagName(part)) = self.convertColor(c);
 
         const bg = self.current.background;
         if (part == .background or part == .foreground) {
             const fg = self.current.foreground;
-            self.current.dim_foreground = fg.mix(bg, 0.75);
+            self.current.faint_foreground = fg.mix(bg, 0.75);
         }
         if (part == .background or part == .underline) {
             const ul = self.current.underline;
-            self.current.dim_underline = ul.mix(bg, 0.75);
+            self.current.faint_underline = ul.mix(bg, 0.75);
         }
     }
 
     pub fn resetColor(self: *Self, comptime part: ColorPart) void {
         @field(self.current, @tagName(part)) = @field(self.default, @tagName(part));
-        if (part == .background) return; // if foreground or underline, we need to set dim variants too
-        @field(self.current, "dim_" ++ @tagName(part)) = @field(self.default, "dim_" ++ @tagName(part));
+        if (part == .background) return; // if foreground or underline, we need to set faint variants too
+        @field(self.current, "faint_" ++ @tagName(part)) = @field(self.default, "faint_" ++ @tagName(part));
     }
 };
 

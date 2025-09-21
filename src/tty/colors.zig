@@ -39,6 +39,13 @@ pub const Basic = enum(u4) {
     light_magenta,
     yellow,
     white,
+
+    pub fn toAnsi(self: Basic, bg: bool) u8 {
+        var out: u8 = @intFromEnum(self);
+        if (out >= 8) out += 60 - 8;
+        if (bg) out += 10;
+        return out + 30;
+    }
 };
 
 // PALETTE
@@ -68,6 +75,7 @@ pub const palette16: [16]Rgb = .{
 // upper part of the 256-color palette
 // should not be modified in any mode
 pub const palette240 = blk: {
+    @setEvalBranchQuota(10000);
     var out: [240]Rgb = undefined;
 
     for (0..6) |i|

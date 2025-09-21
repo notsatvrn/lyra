@@ -58,12 +58,12 @@ pub const Logger = struct {
     name: []const u8,
 
     inline fn log(self: Logger, comptime level: Level, comptime fmt: []const u8, args: anytype) void {
-        var color: colors.Basic = .green;
+        var color: colors.Basic = .light_green;
         var str: []const u8 = "INFO ";
 
         switch (level) {
             .debug => {
-                color = .cyan;
+                color = .light_cyan;
                 str = "DEBUG";
             },
             .warn => {
@@ -71,7 +71,7 @@ pub const Logger = struct {
                 str = "WARN ";
             },
             .err => {
-                color = .red;
+                color = .light_red;
                 str = "ERROR";
             },
             else => {},
@@ -113,6 +113,9 @@ pub fn panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
     lock.lock();
     memory.ready = false; // stop allocating log buffer
+    tty.state.setColor(.foreground, .{ .basic = .light_red });
+    tty.state.setColor(.underline, .{ .basic = .light_red });
+    tty.state.effects.set(.underline, .single);
     printRaw("[PANIC] {s}", .{msg}) catch unreachable;
     printRaw("call trace:", .{}) catch unreachable;
 

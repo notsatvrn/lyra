@@ -26,8 +26,8 @@ pub const Entry = packed struct(u64) {
     accessed:   bool = false,
     level:      Level = .{ .directory = .{} },
     _reserved0: u3  = 0,
-    address:    u35 = 0,
-    _reserved1: u12 = 0,
+    address:    u40 = 0,
+    _reserved1: u7 = 0,
     prot_key:   u4  = 0,
     no_exec:    bool = false,
 
@@ -53,7 +53,7 @@ pub const Entry = packed struct(u64) {
     }
 
     pub inline fn getAddr(self: Entry) usize {
-        const mask = ((@as(u64, 1) << 35) - 1) << 12;
+        const mask = ((@as(u64, 1) << 40) - 1) << 12;
         return @as(u64, @bitCast(self)) & mask;
     }
 

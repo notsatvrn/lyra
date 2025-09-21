@@ -2,31 +2,17 @@ const std = @import("std");
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
+const Basic = colors.Basic;
 
 // COLORS
 
 pub const ColorPart = enum(u8) { foreground = 38, background = 48, underline = 58 };
 
-inline fn writeColorSGR(color: Color, writer: *std.Io.Writer, part: ColorPart) !void {
-    return print: switch (color) {
-        .basic => |v| continue :print .{ .@"256" = @intFromEnum(v) },
-        .@"256" => |v| writer.print("{d};5;{d}", .{ @intFromEnum(part), v }),
-        .rgb => |v| {
-            const rgb = v.toBpc8();
-            const params = .{ @intFromEnum(part), rgb.r, rgb.g, rgb.b };
-            return writer.print("{d};2;{d};{d};{d}", params);
-        },
-    };
-}
-
 // EFFECTS
 
 pub const Effect = enum(u8) {
     bold = 1,
-    // this one is a bit weirdly handled in RenderState
-    // mode is changed in Palettes struct instead of checking each time
-    dim = 2,
-    italic = 3,
+    faint = 2,
     // can also be set to double with 21 (ECMA-48)
     // add special case for that
     underline = 4,
@@ -38,25 +24,20 @@ pub const Effect = enum(u8) {
 
     pub const Set = std.EnumSet(Effect);
 
-    pub inline fn setCode(self: Effect) u8 {
-        return @intFromEnum(self);
-    }
-
     pub inline fn unsetCode(self: Effect) u8 {
         return switch (self) {
             // many consoles have this as 21 but ECMA-28 says otherwise
             // newer Linux kernels follow ECMA-28, let's copy that behavior
             .bold => 22,
             .overline => 55,
-            else => self.setCode() + 20,
+            else => @intFromEnum(self) + 20,
         };
     }
 };
 
 pub const StatefulEffect = union(Effect) {
     bold,
-    dim,
-    italic,
+    faint,
     underline: Underline,
     blinking,
     inverse,
@@ -71,6 +52,12 @@ pub const StatefulEffect = union(Effect) {
         dotted = 4,
         dashed = 5,
     };
+
+    pub fn format(self: StatefulEffect, writer: *std.Io.Writer) !void {
+        if (self == .underline) {
+            try writer.print("4:{}", .{@intFromEnum(self.underline)});
+        } else try writer.print("{}", .{@intFromEnum(@as(Effect, self))});
+    }
 };
 
 pub const Effects = struct {
@@ -89,19 +76,19 @@ pub const Effects = struct {
         return if (typ == void) bool else @Type(.{ .optional = .{ .child = typ } });
     }
 
-    pub inline fn set(self: *Effects, comptime effect: Effect, value: bool) void {
-        if (effect == .underline) @compileError("use Effects.setUnderline");
+    pub fn set(self: *Effects, comptime effect: Effect, value: effectType(effect)) void {
+        if (effect == .underline) {
+            if (value) |underline| {
+                self.inner.insert(.underline);
+                self.underline = underline;
+            } else self.inner.remove(.underline);
+            return;
+        }
+
         if (value) self.inner.insert(effect) else self.inner.remove(effect);
     }
 
-    pub inline fn setUnderline(self: *Effects, u: ?StatefulEffect.Underline) void {
-        if (u) |ul| {
-            self.inner.insert(.underline);
-            self.underline = ul;
-        } else self.inner.remove(.underline);
-    }
-
-    pub inline fn get(self: Effects, comptime effect: Effect) effectType(effect) {
+    pub fn get(self: Effects, comptime effect: Effect) effectType(effect) {
         const contains = self.inner.contains(effect);
         return switch (effect) {
             .underline => if (contains) self.underline else null,
@@ -113,6 +100,7 @@ pub const Effects = struct {
 // ANSI ESCAPE CODES
 
 const memory = @import("../memory.zig");
+const allocator = memory.allocator;
 
 pub const Command = union(enum) {
     move_v: Movement,
@@ -127,6 +115,7 @@ pub const Command = union(enum) {
     erase_line: u2,
     scroll: Movement,
     sgr: Sgr,
+    multi_sgr: std.ArrayList(Sgr),
     report_cursor,
     cursor_pos_store: CursorPosStore,
     // true to show it
@@ -158,22 +147,132 @@ pub const Command = union(enum) {
 
     pub const Sgr = union(enum) {
         reset,
-        set_color: struct { part: ColorPart, color: Color },
         set_effect: StatefulEffect,
         unset_effect: Effect,
+        set_color: struct {
+            part: ColorPart,
+            color: ?Color = null,
+        },
 
         pub fn format(self: Sgr, writer: *std.Io.Writer) !void {
-            switch (self) {
-                .reset => try writer.writeByte('0'),
-                .set_color => |v| try writeColorSGR(v.color, writer, v.part),
-                .set_effect => |v| try writer.print("{}", .{@as(Effect, v).setCode()}),
-                .unset_effect => |v| try writer.print("{}", .{v.unsetCode()}),
+            try switch (self) {
+                .reset => writer.writeByte('0'),
+                .set_effect => |v| writer.print("{f}", .{v}),
+                .unset_effect => |v| writer.print("{}", .{v.unsetCode()}),
+                .set_color => |v| writeSetColor(writer, v.part, v.color),
+            };
+        }
+
+        inline fn writeSetColor(writer: *std.Io.Writer, part: ColorPart, color: ?Color) !void {
+            // set to default color. combined into one command for simplicity sake
+            if (color == null) return writer.print("{}", .{@intFromEnum(part) + 1});
+
+            color: switch (color.?) {
+                .basic => |v| {
+                    // underline doesn't have the basic color settings. use the 256-color one
+                    if (part == .underline) continue :color .{ .@"256" = @intFromEnum(v) };
+                    try writer.print("{}", .{v.toAnsi(part == .background)});
+                },
+                .@"256" => |v| try writer.print("{};5;{}", .{ @intFromEnum(part), v }),
+                .rgb => |v| {
+                    const rgb = v.toBpc8();
+                    const params = .{ @intFromEnum(part), rgb.r, rgb.g, rgb.b };
+                    return writer.print("{};2;{};{};{}", params);
+                },
             }
         }
 
-        pub fn parse(buffer: []const u8) ?Sgr {
-            _ = buffer;
-            return null;
+        pub fn parse(buffer: []const u8) ?std.ArrayList(Sgr) {
+            if (buffer.len == 0) return null;
+
+            var iterator = std.mem.SplitIterator(u8, .scalar){
+                .buffer = buffer,
+                .delimiter = ';',
+                .index = 0,
+            };
+            var out = std.ArrayList(Sgr){};
+
+            while (iterator.next()) |part| {
+                switch (std.fmt.parseInt(u8, part, 10) catch continue) {
+                    0 => out.append(allocator, .reset) catch return null,
+                    1 => out.append(allocator, .{ .set_effect = .bold }) catch return null,
+                    2 => out.append(allocator, .{ .set_effect = .faint }) catch return null,
+                    // we don't support italics so we'll just do blinking instead
+                    3 => out.append(allocator, .{ .set_effect = .blinking }) catch return null,
+                    // TODO: underline
+                    4 => continue,
+                    5 => out.append(allocator, .{ .set_effect = .blinking }) catch return null,
+                    // TODO: rapid blink
+                    6 => continue,
+                    7 => out.append(allocator, .{ .set_effect = .inverse }) catch return null,
+                    8 => out.append(allocator, .{ .set_effect = .hidden }) catch return null,
+                    9 => out.append(allocator, .{ .set_effect = .strikethru }) catch return null,
+                    // font changing not supported
+                    10...19 => continue,
+                    // fraktur not supported
+                    20 => continue,
+                    // double-underline per ECMA-48, on some consoles disables bold though
+                    21 => out.append(allocator, .{ .set_effect = .{ .underline = .double } }) catch return null,
+                    22 => {
+                        // normal intensity; unsets both bold and faint
+                        out.append(allocator, .{ .unset_effect = .bold }) catch return null;
+                        out.append(allocator, .{ .unset_effect = .faint }) catch return null;
+                    },
+                    // we don't support italics so we'll just do blinking instead
+                    23 => out.append(allocator, .{ .unset_effect = .blinking }) catch return null,
+                    24 => out.append(allocator, .{ .unset_effect = .underline }) catch return null,
+                    25 => out.append(allocator, .{ .unset_effect = .blinking }) catch return null,
+                    // TODO: rapid blink
+                    26 => continue,
+                    27 => out.append(allocator, .{ .unset_effect = .inverse }) catch return null,
+                    28 => out.append(allocator, .{ .unset_effect = .hidden }) catch return null,
+                    29 => out.append(allocator, .{ .unset_effect = .strikethru }) catch return null,
+                    30...37 => |v| out.append(
+                        allocator,
+                        .{ .set_color = .{
+                            .part = .foreground,
+                            .color = .{ .basic = @enumFromInt(v - 30) },
+                        } },
+                    ) catch return null,
+                    // TODO: advanced foreground color setting
+                    38 => continue,
+                    39 => out.append(allocator, .{ .set_color = .{ .part = .foreground } }) catch return null,
+                    40...47 => |v| out.append(
+                        allocator,
+                        .{ .set_color = .{
+                            .part = .background,
+                            .color = .{ .basic = @enumFromInt(v - 40) },
+                        } },
+                    ) catch return null,
+                    // TODO: advanced background color setting
+                    48 => continue,
+                    49 => out.append(allocator, .{ .set_color = .{ .part = .background } }) catch return null,
+                    53 => out.append(allocator, .{ .set_effect = .overline }) catch return null,
+                    55 => out.append(allocator, .{ .unset_effect = .overline }) catch return null,
+                    // TODO: underline color setting
+                    58 => continue,
+                    59 => out.append(allocator, .{ .set_color = .{ .part = .underline } }) catch return null,
+                    90...97 => |v| out.append(
+                        allocator,
+                        .{ .set_color = .{
+                            .part = .foreground,
+                            .color = .{ .basic = @enumFromInt((v - 90) + 8) },
+                        } },
+                    ) catch return null,
+                    100...107 => |v| out.append(
+                        allocator,
+                        .{ .set_color = .{
+                            .part = .background,
+                            .color = .{ .basic = @enumFromInt((v - 100) + 8) },
+                        } },
+                    ) catch return null,
+
+                    // invalid command
+                    else => continue,
+                }
+            }
+
+            return out;
         }
     };
 
@@ -202,6 +301,15 @@ pub const Command = union(enum) {
             .erase_line => |v| writer.print("{}K", .{v}),
             .scroll => |v| writer.print("{}{c}", .{ v.distance, @as(u8, if (v.forward) 'T' else 'S') }),
             .sgr => |v| writer.print("{f}m", .{v}),
+            .multi_sgr => |v| {
+                if (v.items.len > 0) {
+                    try writer.print("{f}", .{v.items[0]});
+                    for (v.items[1..]) |sgr| {
+                        try writer.print(";{f}", .{sgr});
+                    }
+                }
+                try writer.writeByte('m');
+            },
             .report_cursor => writer.writeAll("6n"),
             .cursor_pos_store => |v| writer.writeByte(v.char()),
             .cursor_visible => |v| writer.print("25{c}", .{@as(u8, if (v) 'h' else 'l')}),
@@ -232,8 +340,7 @@ pub const Parser = struct {
         if (!self.parsing) {
             @branchHint(.likely);
             if (char == Command.esc) {
-                self.buffer.ensureTotalCapacity(memory.allocator, 32) catch unreachable;
-                self.buffer.clearRetainingCapacity();
+                self.buffer.ensureTotalCapacity(allocator, 32) catch unreachable;
                 self.parsing = true;
                 return true;
             } else return false;
@@ -241,36 +348,41 @@ pub const Parser = struct {
 
         if (self.nop or !memory.ready) {
             switch (char) {
+                // Control Sequence Introducer
+                '[' => self.csi = true,
+                // CSI COMMANDS
                 'A', 'B', 'C', 'D', 'E', 'F', 'f', 'G', 'H', 'h', 'i', 'J', 'K', 'l', 'm', 'n', 'S', 's', 'T', 'u' => self.parsing = false,
+                // NON-CSI COMMANDS
+                '7', '8' => if (!self.csi) {
+                    self.parsing = false;
+                },
+                'M' => self.parsing = false,
                 else => {},
             }
             return true;
         }
 
-        parser: switch (char) {
+        var do_reset = true;
+        self.parsed = parser: switch (char) {
             // Control Sequence Introducer
             '[' => {
-                if (self.buffer.items.len != 0) {
-                    self.reset();
-                    return true;
-                }
+                if (self.buffer.items.len > 0) break :parser null;
+                do_reset = false;
                 self.csi = true;
+                break :parser null;
             },
 
             // CSI COMMANDS
 
             // single number movement commands
-            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'S', 'T' => |c| if (!self.csi) self.reset() else {
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'S', 'T' => |c| if (self.csi) {
                 var movement = Command.Movement{};
-                movement.distance = std.fmt.parseInt(usize, self.buffer.items, 10) catch {
-                    self.reset();
-                    return true;
-                };
+                movement.distance = std.fmt.parseInt(usize, self.buffer.items, 10) catch break :parser null;
                 movement.forward = switch (c) {
                     'B', 'C', 'E', 'T' => true,
                     else => false,
                 };
-                self.parsed = switch (c) {
+                break :parser switch (c) {
                     'A', 'B' => .{ .move_v = movement },
                     'C', 'D' => .{ .move_h = movement },
                     'E', 'F' => .{ .move_line = movement },
@@ -278,135 +390,100 @@ pub const Parser = struct {
                     'S', 'T' => .{ .scroll = movement },
                     else => unreachable,
                 };
-                self.reset();
-            },
+            } else null,
             // move cursor absolute
-            'H', 'f' => if (!self.csi) self.reset() else {
-                self.parsed = .{ .move_absolute = .{} };
+            'H', 'f' => if (self.csi) {
+                var cmd = Command{ .move_absolute = .{} };
                 const len = self.buffer.items.len;
-                if (len == 0) {
-                    self.reset();
-                    return true;
-                }
+                if (len == 0) break :parser null;
                 // only column is set
                 if (self.buffer.items[0] == ';') {
-                    self.parsed.?.move_absolute.col =
-                        std.fmt.parseInt(usize, self.buffer.items[1..], 10) catch {
-                            self.parsed = null;
-                            break :parser self.reset();
-                        };
-                    self.reset();
-                    return true;
+                    cmd.move_absolute.col = std.fmt.parseInt(usize, self.buffer.items[1..], 10) catch break :parser null;
+                    break :parser cmd;
                 }
                 var i: usize = 0;
                 while (i < len and self.buffer.items[i] != ';') i += 1;
-                self.parsed.?.move_absolute.row =
-                    std.fmt.parseInt(usize, self.buffer.items[0..i], 10) catch {
-                        self.parsed = null;
-                        break :parser self.reset();
-                    };
+                cmd.move_absolute.row = std.fmt.parseInt(usize, self.buffer.items[0..i], 10) catch break :parser null;
                 // only row is set
-                if (i == len) {
-                    self.reset();
-                    return true;
-                }
+                if (i >= len - 1) break :parser null;
                 // both row and column set
-                self.parsed.?.move_absolute.col =
-                    std.fmt.parseInt(usize, self.buffer.items[i + 1 ..], 10) catch {
-                        self.parsed = null;
-                        self.reset();
-                        return true;
-                    };
-                self.reset();
-            },
+                cmd.move_absolute.col = std.fmt.parseInt(usize, self.buffer.items[i + 1 ..], 10) catch break :parser null;
+                break :parser cmd;
+            } else null,
             // erase commands
-            'J', 'K' => |c| if (!self.csi) self.reset() else {
+            'J', 'K' => |c| if (self.csi) {
                 var value: u2 = 0;
                 if (self.buffer.items.len > 0)
-                    value = std.fmt.parseInt(u2, self.buffer.items, 10) catch {
-                        self.reset();
-                        return true;
-                    };
+                    value = std.fmt.parseInt(u2, self.buffer.items, 10) catch break :parser null;
                 // u2 holds up to 3, but Erase in Line is from 0-2
-                if (c == 'K' and value == 3) {
-                    self.reset();
-                    return true;
-                }
-                self.parsed = switch (c) {
+                if (c == 'K' and value == 3) break :parser null;
+                break :parser switch (c) {
                     'J' => .{ .erase_display = value },
                     'K' => .{ .erase_line = value },
                     else => unreachable,
                 };
-                self.reset();
-            },
+            } else null,
             // select graphic rendition
-            'm' => if (!self.csi) self.reset() else {
-                const sgr = Command.Sgr.parse(self.buffer.items) orelse {
-                    self.reset();
-                    return true;
-                };
-                self.parsed = .{ .sgr = sgr };
-            },
+            'm' => if (self.csi) {
+                const sgr = Command.Sgr.parse(self.buffer.items) orelse break :parser null;
+                break :parser .{ .multi_sgr = sgr };
+            } else null,
             // report cursor position
-            'n' => if (!self.csi) self.reset() else {
+            'n' => if (self.csi) {
                 if (self.buffer.items.len != 0 or
                     self.buffer.items[0] != '6')
-                {
-                    self.reset();
-                    return true;
-                }
-                self.parsed = .report_cursor;
-            },
+                    break :parser null;
+                break :parser .report_cursor;
+            } else null,
             // save/restore cursor position (SCO)
-            's', 'u' => |c| if (!self.csi) self.reset() else {
-                if (self.buffer.items.len > 0) {
-                    self.reset();
-                    return true;
-                }
-                self.parsed = .{ .cursor_pos_store = .{ .restore = c == 'u' } };
-            },
+            's', 'u' => |c| if (self.csi) {
+                if (self.buffer.items.len > 0) break :parser null;
+                break :parser .{ .cursor_pos_store = .{ .restore = c == 'u' } };
+            } else null,
             // show/hide cursor
-            'h', 'l' => |c| if (!self.csi) self.reset() else {
+            'h', 'l' => |c| if (self.csi) {
                 const len = self.buffer.items.len;
                 if (len < 2 or
                     self.buffer.items[len - 2] != '2' or
                     self.buffer.items[len - 1] != '5')
-                {
-                    self.reset();
-                    return true;
-                }
-                self.parsed = .{ .cursor_visible = c == 'h' };
-                self.reset();
-            },
+                    break :parser null;
+                break :parser .{ .cursor_visible = c == 'h' };
+            } else null,
 
             // NON-CSI COMMANDS
 
             // move cursor up one line, scroll if needed
-            'M' => if (self.csi) self.reset() else {
-                if (self.buffer.items.len != 0) {
-                    self.reset();
-                    return true;
-                }
+            'M' => if (!self.csi) {
+                if (self.buffer.items.len > 0) break :parser null;
                 // default distance is 1, default direction is up
-                self.parsed = .{ .move_v = .{ .can_scroll = true } };
-            },
+                break :parser .{ .move_v = .{ .can_scroll = true } };
+            } else null,
             // save/restore cursor position (DEC)
-            '7', '8' => |c| if (self.csi) self.reset() else {
-                if (self.buffer.items.len > 0) {
-                    self.reset();
-                    return true;
-                }
-                self.parsed = .{ .cursor_pos_store = .{ .dec = true, .restore = c == '8' } };
+            '7', '8' => |c| if (!self.csi) {
+                if (self.buffer.items.len > 0) break :parser null;
+                break :parser .{ .cursor_pos_store = .{ .dec = true, .restore = c == '8' } };
+            } else {
+                // numbers could be part of a CSI command
+                // TODO: we need to do something on overflow
+                self.buffer.append(allocator, char) catch unreachable;
+                do_reset = false;
+                break :parser null;
             },
 
             // TODO: we need to do something on overflow
-            else => self.buffer.append(memory.allocator, char) catch unreachable,
-        }
+            else => {
+                self.buffer.append(allocator, char) catch unreachable;
+                do_reset = false;
+                break :parser null;
+            },
+        };
 
+        if (do_reset) self.reset();
         return true;
     }
 
     inline fn reset(self: *Self) void {
+        self.buffer.shrinkAndFree(allocator, 32);
         self.buffer.clearRetainingCapacity();
         self.parsing = false;
         self.csi = false;
