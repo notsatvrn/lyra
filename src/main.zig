@@ -39,23 +39,26 @@ export fn stage1() noreturn {
     pci.init();
     pci.print();
     logger.info("entering stage 2", .{});
+    barrier = .init(0);
     smp.launch(stage2);
 }
+
+var barrier: smp.Barrier = undefined;
 
 fn stage2() noreturn {
     const cpu = smp.getCpu();
     memory.vmm.tables[cpu].load();
     rng.initGenerator();
+
+    barrier.wait();
     // get all the entropy we can
     smp.runOnce(rng.cycleAllEntropy);
+    // check how much memory we used
+    smp.runOnce(memory.pmm.printUsed);
 
+    clock.stall(std.time.ns_per_ms);
     logger.debug("halting...", .{});
     util.halt();
-}
-
-fn printsmth() void {
-    const kib = memory.pmm.used() * 4;
-    logger.info("{} KiB ({} MiB) used", .{ kib, kib / 1024 });
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS

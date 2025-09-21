@@ -69,6 +69,23 @@ pub inline fn runOnce(func: anytype) funcReturnType(func) {
     if (funcReturnType(func) != void) return null;
 }
 
+pub const Barrier = struct {
+    current: usize = 0,
+    expected: usize = 0,
+
+    pub fn init(expected: usize) Barrier {
+        return .{ .expected = if (expected > 0) expected else count() };
+    }
+
+    pub fn wait(self: *Barrier) void {
+        const previous = @atomicRmw(usize, &self.current, .Add, 1, .monotonic);
+        if (previous == self.expected - 1) return;
+
+        while (@atomicLoad(usize, &self.current, .monotonic) != self.expected)
+            std.atomic.spinLoopHint();
+    }
+};
+
 // CPU-LOCAL STORAGE
 
 const allocator = @import("memory.zig").allocator;

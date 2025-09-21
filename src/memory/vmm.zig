@@ -38,6 +38,7 @@ pub fn init() void {
     logger.info("{} page tables ready", .{smp.count()});
     if (cpuid.features.no_exec) logger.info("using the no-execute bit", .{});
     if (cpuid.features.pml5) logger.info("using 5-level paging", .{});
+    logger.info("{} MiB mapping space", .{(pages * page_size) / (1024 * 1024)});
 }
 
 /// Picks a spot in memory after the kernel to map in. Uses small pages.

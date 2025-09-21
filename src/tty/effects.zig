@@ -443,7 +443,7 @@ pub const Parser = struct {
             } else null,
             // select graphic rendition
             'm' => if (self.csi) {
-                break :parser Command.Sgr.parse(self.buffer.items) orelse break :parser null;
+                break :parser Command.Sgr.parse(self.buffer.items);
             } else null,
             // report cursor position
             'n' => if (self.csi) {
@@ -500,7 +500,8 @@ pub const Parser = struct {
     }
 
     inline fn reset(self: *Self) void {
-        self.buffer.shrinkAndFree(allocator, 32);
+        if (self.buffer.items.len > memory.min_page_size)
+            self.buffer.shrinkAndFree(allocator, memory.min_page_size);
         self.buffer.clearRetainingCapacity();
         self.parsing = false;
         self.csi = false;

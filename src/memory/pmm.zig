@@ -223,13 +223,13 @@ pub fn init() void {
     const minimum = pagesNeeded(8 * memory.MB, .small); // 8MiB required
     if (total < minimum) logger.panic("less than 8MiB memory available!", .{});
 
-    logger.info("{}/{} KiB ({} MiB) used", .{ used() * 4, total * 4, (total * 4) / 1024 });
     memory.ready = true;
+    printUsed();
 }
 
 // REGION UTILITIES
 
-pub inline fn used() usize {
+pub fn used() usize {
     var sum: usize = 0;
     for (regions) |region|
         sum += region.set.used;
@@ -239,6 +239,10 @@ pub inline fn used() usize {
 
 pub inline fn unused() usize {
     return total - used();
+}
+
+pub fn printUsed() void {
+    logger.info("{}/{} KiB ({} MiB) used", .{ used() * 4, total * 4, (total * 4) / 1024 });
 }
 
 // search in regions until we find one containing an existing block
