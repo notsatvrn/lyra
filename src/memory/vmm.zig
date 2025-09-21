@@ -8,6 +8,7 @@ const smp = @import("../smp.zig");
 const UsedSet = @import("UsedSet.zig");
 const memory = @import("../memory.zig");
 const limine = @import("../limine.zig");
+const cpuid = @import("../cpuid.zig");
 
 const logger = @import("../log.zig").Logger{ .name = "vmm" };
 
@@ -33,6 +34,10 @@ pub fn init() void {
 
     // default to non-executable paging
     PageTable.Entry.default.setExecutable(false);
+
+    logger.info("{} page tables ready", .{smp.count()});
+    if (cpuid.features.no_exec) logger.info("using the no-execute bit", .{});
+    if (cpuid.features.pml5) logger.info("using 5-level paging", .{});
 }
 
 /// Picks a spot in memory after the kernel to map in. Uses small pages.

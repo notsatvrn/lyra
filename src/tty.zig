@@ -21,6 +21,8 @@ const allocator = @import("memory.zig").allocator;
 
 // STRUCTURES
 
+var buffer: Framebuffer = undefined;
+
 var info: Info = undefined;
 const Info = struct {
     // emulated text area res
@@ -33,16 +35,20 @@ const Info = struct {
 
     pub inline fn init(mode: *const VideoMode) Info {
         return .{
-            .cols = mode.width / 8,
-            .rows = mode.height / 16,
-            .hpad = @truncate(mode.width % 8),
-            .vpad = @truncate(mode.height % 16),
+            .cols = mode.width / font.width,
+            .rows = mode.height / font.height,
+            .hpad = @truncate(mode.width % font.width),
+            .vpad = @truncate(mode.height % font.height),
         };
     }
 };
 
-var font: *const [256][16]u8 = &oldschoolPGC;
-var buffer: Framebuffer = undefined;
+var font: Font = .{};
+const Font = struct {
+    width: usize = 8,
+    height: usize = 16,
+    data: [*]const u8 = @ptrCast(&oldschoolPGC),
+};
 
 var cursor: Cursor = .{};
 const Cursor = struct {
@@ -66,8 +72,8 @@ inline fn getPixel(comptime part: ColorPart) u64 {
 
 fn writeCharRow(pos: usize, data: u8, fg: u64, bg: u64, comptime replace: bool) void {
     var offset: usize = pos;
-    for (0..8) |i| {
-        const bit: u3 = @truncate(7 - i);
+    for (0..font.width) |i| {
+        const bit: u3 = @truncate(font.width - 1 - i);
         const set = (data >> bit & 1) == 1;
         if (replace) {
             buffer.writePixel(offset, if (set) fg else bg);
@@ -76,11 +82,11 @@ fn writeCharRow(pos: usize, data: u8, fg: u64, bg: u64, comptime replace: bool) 
     }
 }
 
-inline fn writeChar(c: u8) void {
+inline fn writeChar(c: u21) void {
     const pitch = buffer.mode.pitch;
 
-    const x = cursor.col * 8;
-    const y = cursor.row * 16;
+    const x = cursor.col * font.width;
+    const y = cursor.row * font.height;
 
     var offset = (x * buffer.bytes) + (y * pitch);
     cursor.col += 1;
@@ -89,35 +95,36 @@ inline fn writeChar(c: u8) void {
 
     if (virtual) |*v| v.damage.add(.{
         .corner = .{ x, y },
-        .dimensions = .{ 8, 16 },
+        .dimensions = .{ font.width, font.height },
     });
 
     const bg = getPixel(.background);
 
     // fast path for hidden
     if (state.effects.get(.hidden))
-        return buffer.drawRect(offset, bg, 8, 16);
-
-    // get character data and apply some effects
-
-    var data = font[c];
-
-    if (state.effects.get(.bold)) {
-        inline for (data, 0..) |r, i|
-            data[i] |= r << 1;
-    }
-
-    if (state.effects.get(.overline)) data[1] = 0xFF;
-    if (state.effects.get(.strikethru)) data[7] = 0xFF;
+        return buffer.drawRect(offset, bg, font.width, font.height);
 
     // write the character!
 
     const fg = getPixel(.foreground);
+    const bold = state.effects.get(.bold);
 
-    inline for (data) |row| {
+    const width_bytes = (font.width + 7) / 8;
+    var char_offset = (c * width_bytes * font.height);
+    for (0..font.height) |_| {
+        var row = font.data[char_offset];
+        if (bold) row |= row << 1;
         writeCharRow(offset, row, fg, bg, true);
         offset += pitch;
+        char_offset += width_bytes;
     }
+
+    offset -= pitch * font.height;
+    if (state.effects.get(.overline))
+        buffer.writePixelNTimes(offset + pitch, fg, font.width);
+    if (state.effects.get(.strikethru))
+        buffer.writePixelNTimes(offset + (pitch * (font.height / 2) - 1), fg, font.width);
+    offset += pitch * font.height;
 
     // we support custom underline color using \e[58...m
 
@@ -127,12 +134,12 @@ inline fn writeChar(c: u8) void {
     const color = getPixel(.underline);
 
     switch (underline) {
-        .single => buffer.writePixelNTimes(offset, color, 8),
+        .single => buffer.writePixelNTimes(offset, color, font.width),
         .double => {
             offset -= pitch;
-            buffer.writePixelNTimes(offset, color, 8);
+            buffer.writePixelNTimes(offset, color, font.width);
             offset += pitch * 2;
-            buffer.writePixelNTimes(offset, color, 8);
+            buffer.writePixelNTimes(offset, color, font.width);
         },
         .curly => {
             writeCharRow(offset, 0b10011001, color, undefined, false);
@@ -146,8 +153,10 @@ inline fn writeChar(c: u8) void {
 
 // SPECIAL CHARACTER HANDLING
 
-pub fn put(char: u8) void {
-    if (state.checkChar(char)) return;
+pub fn put(c: u8) void {
+    const char = state.parse(c) orelse return;
+    // TODO: unicode lookup table
+    if (char >= 128) return;
     switch (char) {
         '\n' => {
             cursor.row += 1;
@@ -176,7 +185,7 @@ pub inline fn print(string: []const u8) void {
 // SCROLLING / CLEARING
 
 inline fn scroll() void {
-    const line_size = buffer.mode.pitch * 16;
+    const line_size = buffer.mode.pitch * font.height;
     const bottom_end = line_size * info.rows;
     const top_end = bottom_end - line_size;
     // Copy buffer data starting from the second line to the start.
@@ -202,8 +211,8 @@ fn damageFull() void {
     if (virtual) |*v| v.damage = .{
         .corner = .{ 0, 0 },
         .dimensions = .{
-            info.cols * 8,
-            info.rows * 16,
+            info.cols * font.width,
+            info.rows * font.height,
         },
     };
 }
@@ -236,7 +245,8 @@ pub const State = struct {
     current: Colors = .init(&colors.palette16),
     effects: Effects = .{},
     palette: [16]Rgb = colors.palette16,
-    ansi_parser: AnsiParser = .{},
+    ansi: AnsiParser = .{},
+    unicode: UnicodeParser = .{},
 
     pub const Colors = struct {
         foreground: Rgb,
@@ -259,10 +269,53 @@ pub const State = struct {
         }
     };
 
+    pub const UnicodeParser = struct {
+        buffer: [4]u8 = undefined,
+        index: u2 = 0,
+        active: bool = false,
+
+        pub fn parse(self: *UnicodeParser, char: u8) ?u21 {
+            if (!self.active or char < 128) {
+                // applications will mostly be
+                // outputting ASCII characters
+                @branchHint(.likely);
+                self.index = 0;
+                return char;
+            }
+
+            self.buffer[self.index] = char;
+            self.index +%= 1;
+
+            const index: u2 = switch (self.buffer[0]) {
+                0b0000_0000...0b0111_1111 => unreachable,
+                0b1100_0000...0b1101_1111 => 1,
+                0b1110_0000...0b1110_1111 => 2,
+                0b1111_0000...0b1111_0111 => 3,
+                else => return null,
+            };
+
+            if (index != self.index) {
+                // applications will mostly be
+                // outputting valid UTF-8
+                @branchHint(.unlikely);
+                self.index = 0;
+                return null;
+            }
+
+            return switch (index) {
+                1 => std.unicode.utf8Decode2(self.buffer[0..2].*) catch null,
+                2 => std.unicode.utf8Decode3(self.buffer[0..3].*) catch null,
+                3 => std.unicode.utf8Decode4(self.buffer[0..4].*) catch null,
+                else => unreachable,
+            };
+        }
+    };
+
     const Self = @This();
 
-    pub fn checkChar(self: *Self, char: u8) bool {
-        return self.ansi_parser.checkChar(char);
+    pub fn parse(self: *Self, char: u8) ?u21 {
+        if (self.ansi.checkChar(char)) return null;
+        return self.unicode.parse(char);
     }
 
     pub fn getColor(self: Self, comptime part: ColorPart) Rgb {

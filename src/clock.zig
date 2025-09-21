@@ -29,9 +29,9 @@ pub fn init() void {
         source = .hpet;
     } else logger.panic("no clocksource available", .{});
 
-    logger.info("using {s} as source", .{@tagName(source)});
+    logger.info("source: {s}", .{@tagName(source)});
     const mhz = @as(f64, @floatFromInt(speed)) / std.time.ns_per_ms;
-    logger.info("counter speed: {d:.3}MHz", .{mhz});
+    logger.info("speed: {d:.3}MHz", .{mhz});
     // counts per microsecond for stall power consumption hack
     us_counts = countsPerNanos(std.time.ns_per_us);
     setupClock(rtc.read());

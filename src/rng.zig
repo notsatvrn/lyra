@@ -82,6 +82,8 @@ var lock = Lock{};
 
 // INITIALIZATION
 
+const logger = @import("log.zig").Logger{ .name = "rng" };
+
 pub fn initBuffers() void {
     states = allocator.alloc(State, smp.count()) catch unreachable;
     for (states) |*state| {
@@ -89,6 +91,7 @@ pub fn initBuffers() void {
         state.entropy = .{ .buffer = buffer };
     }
     clockEntropy();
+    logger.info("{} entropy buffers ready", .{smp.count()});
 }
 
 pub fn initGenerator() void {
@@ -103,6 +106,7 @@ pub fn initGenerator() void {
         state.entropy.add(seed[i]);
     }
     state.generator = .init(seed);
+    logger.info("generator ready", .{});
 }
 
 // ADDING ENTROPY

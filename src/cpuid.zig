@@ -61,7 +61,7 @@ pub var features: Features = undefined;
 
 // PARSE CPUID
 
-pub fn identify() void {
+pub fn initVendor() void {
     vendor = blk: {
         var ebx: u32 = 0;
         var ecx: u32 = 0;
@@ -102,7 +102,9 @@ pub fn identify() void {
             else => .other,
         };
     };
+}
 
+pub fn initFeatures() void {
     // features we can check with Limine
     features.pml5 = limine.paging_mode.response.mode == 1;
     features.x2apic = limine.cpus.response.flags & 1 == 1;

@@ -52,6 +52,8 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 // BASIC LOGGING
 
+const smp = @import("smp.zig");
+
 pub const Logger = struct {
     name: []const u8,
 
@@ -76,11 +78,16 @@ pub const Logger = struct {
         }
 
         const ansi_color = Ansi.setColor(.foreground, .{ .basic = color });
-        print("[{f}{s}{f}] {s}: " ++ fmt, .{ ansi_color, str, Ansi.reset, self.name } ++ args);
+        if (!smp.launched) {
+            @branchHint(.unlikely);
+            print("[{f}{s}{f}] {s}) " ++ fmt, .{ ansi_color, str, Ansi.reset, self.name } ++ args);
+        } else {
+            print("[{f}{s}{f}] [CPU {}] {s}) " ++ fmt, .{ ansi_color, str, Ansi.reset, smp.getCpu(), self.name } ++ args);
+        }
     }
 
     pub inline fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
-        std.debug.panic("{s}: " ++ fmt, .{self.name} ++ args);
+        std.debug.panic("{s}) " ++ fmt, .{self.name} ++ args);
     }
 
     pub fn info(self: Logger, comptime fmt: []const u8, args: anytype) void {
@@ -102,11 +109,11 @@ pub const Logger = struct {
 
 // PANIC
 
-pub fn panic(first_trace_addr: ?usize, comptime fmt: []const u8, args: anytype) noreturn {
+pub fn panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
     lock.lock();
     memory.ready = false; // stop allocating log buffer
-    printRaw("[PANIC] " ++ fmt, args) catch unreachable;
+    printRaw("[PANIC] {s}", .{msg}) catch unreachable;
     printRaw("call trace:", .{}) catch unreachable;
 
     var it = std.debug.StackIterator.init(first_trace_addr, null);

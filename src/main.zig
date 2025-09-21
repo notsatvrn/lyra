@@ -25,19 +25,11 @@ export fn stage1() noreturn {
     int.idt.init();
     int.isr.storeStack();
     int.remapPIC(32, 40);
-
     tty.init();
-
-    logger.info("bootloader was {f}", .{limine.bootldr.response});
-
-    logger.info("identify processor...", .{});
-    cpuid.identify();
-    logger.info("- vendor is {s}", .{@tagName(cpuid.vendor)});
-    if (cpuid.features.x2apic)
-        logger.info("- x2apic is supported", .{});
-    if (cpuid.features.no_exec)
-        logger.info("- nx bit is supported", .{});
-
+    logger.info("bootloader: {f}", .{limine.bootldr.response});
+    cpuid.initVendor();
+    logger.info("cpu vendor: {s}", .{@tagName(cpuid.vendor)});
+    cpuid.initFeatures();
     memory.pmm.init();
     memory.vmm.init();
     tty.virtualize();
@@ -45,6 +37,8 @@ export fn stage1() noreturn {
     clock.init();
     rng.initBuffers();
     pci.init();
+    pci.print();
+    logger.info("entering stage 2", .{});
     smp.launch(stage2);
 }
 
@@ -55,8 +49,13 @@ fn stage2() noreturn {
     // get all the entropy we can
     smp.runOnce(rng.cycleAllEntropy);
 
-    logger.debug("cpu {} halting...", .{cpu});
+    logger.debug("halting...", .{});
     util.halt();
+}
+
+fn printsmth() void {
+    const kib = memory.pmm.used() * 4;
+    logger.info("{} KiB ({} MiB) used", .{ kib, kib / 1024 });
 }
 
 // STANDARD LIBRARY IMPLEMENTATIONS
@@ -72,8 +71,4 @@ pub const os = struct {
     };
 };
 
-fn panicWrapper(msg: []const u8, first_trace_addr: ?usize) noreturn {
-    log.panic(first_trace_addr, "{s}", .{msg});
-}
-
-pub const panic = std.debug.FullPanic(panicWrapper);
+pub const panic = std.debug.FullPanic(log.panic);
