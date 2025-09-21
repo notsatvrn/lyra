@@ -255,9 +255,16 @@ pub const Command = union(enum) {
                 .index = 0,
             };
             var multi = std.ArrayList(Sgr){};
-            const first_part = iterator.first();
+
             first: {
-                const int = std.fmt.parseInt(u8, first_part, 10) catch break :first;
+                const part = iterator.first();
+                if (part.len == 0) {
+                    // CSI m is an alias of CSI 0 m, which is the reset command
+                    if (iterator.index == null) return .{ .sgr = .reset };
+                    break :first multi.append(allocator, .reset) catch return null;
+                }
+
+                const int = std.fmt.parseInt(u8, part, 10) catch break :first;
                 if (Sgr.fromInt(int)) |sgr| {
                     if (iterator.index == null and int != 22) return .{ .sgr = sgr };
                     // either we have more commands to parse, or had command 22
@@ -268,7 +275,14 @@ pub const Command = union(enum) {
             }
 
             while (iterator.next()) |part| {
-                if (iterator.index == null) continue;
+                if (part.len == 0) {
+                    // probably won't encounter ESC[;;m
+                    // very often in actual applications
+                    @branchHint(.unlikely);
+                    multi.append(allocator, .reset) catch return null;
+                    continue;
+                }
+
                 const int = std.fmt.parseInt(u8, part, 10) catch continue;
                 const sgr = Sgr.fromInt(int) orelse continue;
                 multi.append(allocator, sgr) catch return null;
@@ -429,8 +443,6 @@ pub const Parser = struct {
             } else null,
             // select graphic rendition
             'm' => if (self.csi) {
-                // CSI m is an alias of CSI 0 m, which is the reset command
-                if (self.buffer.items.len == 0) break :parser .{ .sgr = .reset };
                 break :parser Command.Sgr.parse(self.buffer.items) orelse break :parser null;
             } else null,
             // report cursor position
