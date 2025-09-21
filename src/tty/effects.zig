@@ -182,95 +182,101 @@ pub const Command = union(enum) {
             }
         }
 
-        pub fn parse(buffer: []const u8) ?std.ArrayList(Sgr) {
+        fn fromInt(int: u8) ?Sgr {
+            return switch (int) {
+                0 => .reset,
+                1 => .{ .set_effect = .bold },
+                2 => .{ .set_effect = .faint },
+                // we don't support italics so we'll just do blinking instead
+                3 => .{ .set_effect = .blinking },
+                // TODO: underline
+                4 => null,
+                5 => .{ .set_effect = .blinking },
+                // TODO: rapid blink
+                6 => null,
+                7 => .{ .set_effect = .inverse },
+                8 => .{ .set_effect = .hidden },
+                9 => .{ .set_effect = .strikethru },
+                // font changing not supported
+                10...19 => null,
+                // fraktur not supported
+                20 => null,
+                // double-underline per ECMA-48, on some consoles disables bold though
+                21 => .{ .set_effect = .{ .underline = .double } },
+                // normal intensity; unsets both bold and faint
+                // we can only do faint here, add bold in full parser
+                22 => .{ .unset_effect = .faint },
+                // we don't support italics so we'll just do blinking instead
+                23 => .{ .unset_effect = .blinking },
+                24 => .{ .unset_effect = .underline },
+                25 => .{ .unset_effect = .blinking },
+                // TODO: rapid blink
+                26 => null,
+                27 => .{ .unset_effect = .inverse },
+                28 => .{ .unset_effect = .hidden },
+                29 => .{ .unset_effect = .strikethru },
+                30...37 => |v| .{ .set_color = .{
+                    .part = .foreground,
+                    .color = .{ .basic = @enumFromInt(v - 30) },
+                } },
+                // TODO: advanced foreground color setting
+                38 => null,
+                39 => .{ .set_color = .{ .part = .foreground } },
+                40...47 => |v| .{ .set_color = .{
+                    .part = .background,
+                    .color = .{ .basic = @enumFromInt(v - 40) },
+                } },
+                // TODO: advanced background color setting
+                48 => null,
+                49 => .{ .set_color = .{ .part = .background } },
+                53 => .{ .set_effect = .overline },
+                55 => .{ .unset_effect = .overline },
+                // TODO: underline color setting
+                58 => null,
+                59 => .{ .set_color = .{ .part = .underline } },
+                90...97 => |v| .{ .set_color = .{
+                    .part = .foreground,
+                    .color = .{ .basic = @enumFromInt((v - 90) + 8) },
+                } },
+                100...107 => |v| .{ .set_color = .{
+                    .part = .background,
+                    .color = .{ .basic = @enumFromInt((v - 100) + 8) },
+                } },
+
+                // invalid command
+                else => null,
+            };
+        }
+
+        pub fn parse(buffer: []const u8) ?Command {
             var iterator = std.mem.SplitIterator(u8, .scalar){
                 .buffer = buffer,
                 .delimiter = ';',
                 .index = 0,
             };
-            var out = std.ArrayList(Sgr){};
-
-            while (iterator.next()) |part| {
-                switch (std.fmt.parseInt(u8, part, 10) catch continue) {
-                    0 => out.append(allocator, .reset) catch return null,
-                    1 => out.append(allocator, .{ .set_effect = .bold }) catch return null,
-                    2 => out.append(allocator, .{ .set_effect = .faint }) catch return null,
-                    // we don't support italics so we'll just do blinking instead
-                    3 => out.append(allocator, .{ .set_effect = .blinking }) catch return null,
-                    // TODO: underline
-                    4 => continue,
-                    5 => out.append(allocator, .{ .set_effect = .blinking }) catch return null,
-                    // TODO: rapid blink
-                    6 => continue,
-                    7 => out.append(allocator, .{ .set_effect = .inverse }) catch return null,
-                    8 => out.append(allocator, .{ .set_effect = .hidden }) catch return null,
-                    9 => out.append(allocator, .{ .set_effect = .strikethru }) catch return null,
-                    // font changing not supported
-                    10...19 => continue,
-                    // fraktur not supported
-                    20 => continue,
-                    // double-underline per ECMA-48, on some consoles disables bold though
-                    21 => out.append(allocator, .{ .set_effect = .{ .underline = .double } }) catch return null,
-                    22 => {
-                        // normal intensity; unsets both bold and faint
-                        out.append(allocator, .{ .unset_effect = .bold }) catch return null;
-                        out.append(allocator, .{ .unset_effect = .faint }) catch return null;
-                    },
-                    // we don't support italics so we'll just do blinking instead
-                    23 => out.append(allocator, .{ .unset_effect = .blinking }) catch return null,
-                    24 => out.append(allocator, .{ .unset_effect = .underline }) catch return null,
-                    25 => out.append(allocator, .{ .unset_effect = .blinking }) catch return null,
-                    // TODO: rapid blink
-                    26 => continue,
-                    27 => out.append(allocator, .{ .unset_effect = .inverse }) catch return null,
-                    28 => out.append(allocator, .{ .unset_effect = .hidden }) catch return null,
-                    29 => out.append(allocator, .{ .unset_effect = .strikethru }) catch return null,
-                    30...37 => |v| out.append(
-                        allocator,
-                        .{ .set_color = .{
-                            .part = .foreground,
-                            .color = .{ .basic = @enumFromInt(v - 30) },
-                        } },
-                    ) catch return null,
-                    // TODO: advanced foreground color setting
-                    38 => continue,
-                    39 => out.append(allocator, .{ .set_color = .{ .part = .foreground } }) catch return null,
-                    40...47 => |v| out.append(
-                        allocator,
-                        .{ .set_color = .{
-                            .part = .background,
-                            .color = .{ .basic = @enumFromInt(v - 40) },
-                        } },
-                    ) catch return null,
-                    // TODO: advanced background color setting
-                    48 => continue,
-                    49 => out.append(allocator, .{ .set_color = .{ .part = .background } }) catch return null,
-                    53 => out.append(allocator, .{ .set_effect = .overline }) catch return null,
-                    55 => out.append(allocator, .{ .unset_effect = .overline }) catch return null,
-                    // TODO: underline color setting
-                    58 => continue,
-                    59 => out.append(allocator, .{ .set_color = .{ .part = .underline } }) catch return null,
-                    90...97 => |v| out.append(
-                        allocator,
-                        .{ .set_color = .{
-                            .part = .foreground,
-                            .color = .{ .basic = @enumFromInt((v - 90) + 8) },
-                        } },
-                    ) catch return null,
-                    100...107 => |v| out.append(
-                        allocator,
-                        .{ .set_color = .{
-                            .part = .background,
-                            .color = .{ .basic = @enumFromInt((v - 100) + 8) },
-                        } },
-                    ) catch return null,
-
-                    // invalid command
-                    else => continue,
-                }
+            var multi = std.ArrayList(Sgr){};
+            const first_part = iterator.first();
+            first: {
+                const int = std.fmt.parseInt(u8, first_part, 10) catch break :first;
+                if (Sgr.fromInt(int)) |sgr| {
+                    if (iterator.index == null and int != 22) return .{ .sgr = sgr };
+                    // either we have more commands to parse, or had command 22
+                    multi.append(allocator, sgr) catch return null;
+                    // 22 is normal intensity. fromInt will only return unset faint, but it also unsets bold
+                    if (int == 22) multi.append(allocator, .{ .unset_effect = .bold }) catch return null;
+                } else if (iterator.index == null) return null;
             }
 
-            return out;
+            while (iterator.next()) |part| {
+                if (iterator.index == null) continue;
+                const int = std.fmt.parseInt(u8, part, 10) catch continue;
+                const sgr = Sgr.fromInt(int) orelse continue;
+                multi.append(allocator, sgr) catch return null;
+                // 22 is normal intensity. fromInt will only return unset faint, but it also unsets bold
+                if (int == 22) multi.append(allocator, .{ .unset_effect = .bold }) catch return null;
+            }
+
+            return .{ .multi_sgr = multi };
         }
     };
 
@@ -425,8 +431,7 @@ pub const Parser = struct {
             'm' => if (self.csi) {
                 // CSI m is an alias of CSI 0 m, which is the reset command
                 if (self.buffer.items.len == 0) break :parser .{ .sgr = .reset };
-                const sgr = Command.Sgr.parse(self.buffer.items) orelse break :parser null;
-                break :parser .{ .multi_sgr = sgr };
+                break :parser Command.Sgr.parse(self.buffer.items) orelse break :parser null;
             } else null,
             // report cursor position
             'n' => if (self.csi) {

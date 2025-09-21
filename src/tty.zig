@@ -305,7 +305,7 @@ pub const State = struct {
             // applications will mostly be
             // outputting ASCII characters
             @branchHint(.unlikely);
-            if (self.ansi.parsed) |cmd| {
+            if (self.ansi.parsed) |*cmd| {
                 self.processCommand(cmd);
                 self.ansi.parsed = null;
             }
@@ -320,11 +320,13 @@ pub const State = struct {
         return char;
     }
 
-    pub fn processCommand(self: *Self, command: effects.Command) void {
-        switch (command) {
+    fn processCommand(self: *Self, command: *effects.Command) void {
+        switch (command.*) {
             .sgr => |sgr| self.processSgr(sgr),
-            .multi_sgr => |list| for (list.items) |sgr| {
-                self.processSgr(sgr);
+            .multi_sgr => |*list| {
+                for (list.items) |sgr|
+                    self.processSgr(sgr);
+                list.deinit(allocator);
             },
             // TODO: handle more commands
             else => {},
