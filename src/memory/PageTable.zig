@@ -182,7 +182,7 @@ pub fn map(self: *Self, phys: ?usize, virt: usize, len: usize, size: Size, flags
     try mapRecursive(self.top, &self.pool, level, &v_page, end, p_ptr, size, clean_flags);
 }
 
-fn mapRecursive(table: *Table, pool: *Pool, level: u3, start: *usize, end: usize, phys: ?*usize, size: Size, flags: Entry) !void {
+fn mapRecursive(noalias table: *Table, noalias pool: *Pool, level: u3, noalias start: *usize, end: usize, noalias phys: ?*usize, size: Size, flags: Entry) !void {
     const unmap = phys == null;
     const start_idx = index(level, start.*);
     const end_idx = index(level, end);
@@ -216,7 +216,7 @@ fn mapRecursive(table: *Table, pool: *Pool, level: u3, start: *usize, end: usize
             }
             // now we have a directory, and we can start mapping in it
             const next_table: *Table = @ptrFromInt(entry.getAddr() + limine.hhdm.response.offset);
-            try mapRecursive(next_table, pool, level - 1, start, start.* +| entry_bytes, phys, size, flags);
+            try mapRecursive(next_table, pool, level - 1, start, @min(end, start.* +| entry_bytes), phys, size, flags);
         }
     }
 }

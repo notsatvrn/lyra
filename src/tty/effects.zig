@@ -85,22 +85,24 @@ pub const Effects = struct {
         return if (typ == void) bool else @Type(.{ .optional = .{ .child = typ } });
     }
 
-    pub fn set(self: *Effects, comptime effect: Effect, value: effectType(effect)) void {
-        if (effect == .underline or effect == .blinking) {
-            if (value) |val| {
-                self.inner.insert(effect);
-                @field(self, @tagName(effect)) = val;
-            } else self.inner.remove(effect);
-            return;
-        }
-
+    pub inline fn set(self: *Effects, effect: Effect, value: bool) void {
         if (value) self.inner.insert(effect) else self.inner.remove(effect);
     }
 
-    pub fn get(self: Effects, comptime effect: Effect) effectType(effect) {
+    pub inline fn setSpecial(self: *Effects, comptime effect: Effect, value: effectType(effect)) void {
+        if (value) |v| @field(self, @tagName(effect)) = v;
+        self.set(effect, value != null);
+    }
+
+    pub inline fn get(self: *const Effects, effect: Effect) bool {
+        return self.inner.contains(effect);
+    }
+
+    pub inline fn getSpecial(self: Effects, comptime effect: Effect) effectType(effect) {
         const contains = self.inner.contains(effect);
         return switch (effect) {
             .underline => if (contains) self.underline else null,
+            .blinking => if (contains) self.blinking else null,
             else => contains,
         };
     }

@@ -249,7 +249,7 @@ pub const Hpet = packed struct {
     minimum_tick: u16,
     page_protection: u8,
 
-    pub inline fn timers(self: Hpet) usize {
+    pub inline fn timers(self: *const Hpet) usize {
         return @as(usize, self.comparator_count) + 1;
     }
 };

@@ -44,7 +44,7 @@ pub fn levelName(level: Level) []const u8 {
 pub const Logger = struct {
     name: []const u8,
 
-    pub fn log(self: Logger, level: Level, comptime fmt: []const u8, args: anytype) void {
+    pub fn log(self: *const Logger, level: Level, comptime fmt: []const u8, args: anytype) void {
         const time = nanoSinceBoot() / std.time.ns_per_us;
         const micros = time % std.time.us_per_s;
         const secs = time / std.time.us_per_s;
@@ -69,7 +69,7 @@ pub const Logger = struct {
         }
     }
 
-    fn logToWriter(self: Logger, writer: *std.Io.Writer, micros: usize, secs: usize, level: Level, comptime fmt: []const u8, args: anytype) !void {
+    fn logToWriter(self: *const Logger, writer: *std.Io.Writer, micros: usize, secs: usize, level: Level, comptime fmt: []const u8, args: anytype) !void {
         try writer.print("{f}[{d: >5}.{d:0>6}] ", .{ Ansi.reset, secs, micros });
         const color = Ansi.setColor(.foreground, .{ .basic = levelColor(level) });
         try writer.print("[{f}{s}{f}] ", .{ color, levelName(level), Ansi.reset });
@@ -82,23 +82,23 @@ pub const Logger = struct {
         try writer.writeByte('\n');
     }
 
-    pub inline fn panic(self: Logger, comptime fmt: []const u8, args: anytype) noreturn {
+    pub inline fn panic(self: *const Logger, comptime fmt: []const u8, args: anytype) noreturn {
         std.debug.panic("{s}) " ++ fmt, .{self.name} ++ args);
     }
 
-    pub inline fn info(self: Logger, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn info(self: *const Logger, comptime fmt: []const u8, args: anytype) void {
         self.log(.info, fmt, args);
     }
 
-    pub inline fn debug(self: Logger, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn debug(self: *const Logger, comptime fmt: []const u8, args: anytype) void {
         self.log(.debug, fmt, args);
     }
 
-    pub inline fn warn(self: Logger, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn warn(self: *const Logger, comptime fmt: []const u8, args: anytype) void {
         self.log(.warn, fmt, args);
     }
 
-    pub inline fn err(self: Logger, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn err(self: *const Logger, comptime fmt: []const u8, args: anytype) void {
         self.log(.err, fmt, args);
     }
 };
@@ -108,17 +108,18 @@ pub const Logger = struct {
 pub fn panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
     tty.lock.lock();
+    memory.ready = false; // allocations will probably fail
     tty.state.setColor(.foreground, .{ .basic = .light_red });
     tty.state.setColor(.underline, .{ .basic = .light_red });
-    tty.state.effects.set(.underline, .single);
-    tty.writer.print("[PANIC] {s}", .{msg}) catch unreachable;
-    tty.writer.print("call trace:", .{}) catch unreachable;
+    tty.state.effects.setSpecial(.underline, .single);
+    tty.writer.print("[PANIC] {s}\n", .{msg}) catch unreachable;
+    tty.writer.print("call trace:\n", .{}) catch unreachable;
 
     var it = std.debug.StackIterator.init(first_trace_addr, null);
     while (it.next()) |return_address| {
         const address = return_address -| 5;
         if (address == 0) break;
-        tty.writer.print("- 0x{X:0>16}", .{address}) catch unreachable;
+        tty.writer.print("- 0x{X:0>16}\n", .{address}) catch unreachable;
     }
 
     tty.sync();

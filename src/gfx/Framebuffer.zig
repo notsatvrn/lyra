@@ -65,7 +65,7 @@ pub fn init(ptr: [*]u8, mode: *const VideoMode) Self {
 
 // WRITING PIXELS
 
-pub fn makePixel(self: Self, color: Rgb) u64 {
+pub fn makePixel(self: *const Self, color: Rgb) u64 {
     var r = @as(u64, color.r);
     var g = @as(u64, color.g);
     var b = @as(u64, color.b);
@@ -81,7 +81,7 @@ pub fn makePixel(self: Self, color: Rgb) u64 {
     return r | g | b;
 }
 
-pub fn writePixel(self: Self, pos: usize, pixel: u64) void {
+pub fn writePixel(self: *const Self, pos: usize, pixel: u64) void {
     switch (self.bytes) {
         inline 2...5 => |bytes| {
             const Pixel = std.meta.Int(.unsigned, bytes * 8);
@@ -92,25 +92,25 @@ pub fn writePixel(self: Self, pos: usize, pixel: u64) void {
     }
 }
 
-pub inline fn writePixelNTimes(self: Self, pos: usize, pixel: u64, n: usize) void {
+pub inline fn writePixelNTimes(self: *const Self, pos: usize, pixel: u64, n: usize) void {
     for (0..n) |i| self.writePixel(pos + (self.bytes * i), pixel);
 }
 
-pub inline fn drawRect(self: Self, pos: usize, pixel: u64, w: usize, h: usize) void {
+pub inline fn drawRect(self: *const Self, pos: usize, pixel: u64, w: usize, h: usize) void {
     for (0..h) |i| self.writePixelNTimes(pos + (self.mode.pitch * i), pixel, w);
 }
 
-pub inline fn writeColor(self: Self, pos: usize, color: Rgb) void {
+pub inline fn writeColor(self: *const Self, pos: usize, color: Rgb) void {
     self.writePixel(pos, self.makePixel(color));
 }
 
-pub inline fn clear(self: Self) void {
+pub inline fn clear(self: *const Self) void {
     @memset(self.buf, 0);
 }
 
 // READING PIXELS
 
-pub fn readColor(self: Self, pos: usize) Rgb {
+pub fn readColor(self: *const Self, pos: usize) Rgb {
     var pixel: u64 = 0;
 
     switch (self.bytes) {
@@ -145,7 +145,8 @@ pub fn readColor(self: Self, pos: usize) Rgb {
 
 const Rect = @import("../gfx.zig").Rect;
 
-pub fn copy(dst: *Self, src: *const Self, bounds: ?Rect) void {
+/// dst and src cannot be the same buffer!
+pub fn copy(noalias dst: *const Self, noalias src: *const Self, bounds: ?Rect) void {
     const width = if (bounds) |b| b.dimensions[0] else @min(src.mode.width, dst.mode.width);
     const height = if (bounds) |b| b.dimensions[1] else @min(src.mode.height, dst.mode.height);
 

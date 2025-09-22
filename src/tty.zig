@@ -129,7 +129,7 @@ inline fn writeChar(c: u21) void {
 
     // we support custom underline color using \e[58...m
 
-    const underline = state.effects.get(.underline) orelse return;
+    const underline = state.effects.getSpecial(.underline) orelse return;
 
     offset -= pitch * 2;
     const color = getPixel(.underline);
@@ -351,14 +351,12 @@ pub const State = struct {
                 self.effects = .{};
             },
             .set_effect => |v| switch (v) {
-                .underline => |u| self.effects.set(.underline, u),
-                .blinking => |b| self.effects.set(.blinking, b),
-                inline else => |_, e| self.effects.set(e, true),
+                .underline => |u| self.effects.setSpecial(.underline, u),
+                .blinking => |b| self.effects.setSpecial(.blinking, b),
+                else => |e| self.effects.set(e, true),
             },
             .unset_effect => |v| switch (v) {
-                .underline => self.effects.set(.underline, null),
-                .blinking => self.effects.set(.blinking, null),
-                inline else => |e| self.effects.set(e, false),
+                else => |e| self.effects.set(e, false),
             },
             .set_color => |v| switch (v.part) {
                 inline else => |part| self.setColor(part, v.color),
@@ -366,7 +364,7 @@ pub const State = struct {
         }
     }
 
-    pub fn getColor(self: Self, comptime part: ColorPart) Rgb {
+    pub fn getColor(self: *const Self, comptime part: ColorPart) Rgb {
         if (part == .background) return self.current.background;
 
         const faint = self.effects.get(.faint);
@@ -374,7 +372,7 @@ pub const State = struct {
         return @field(self.current, @tagName(part));
     }
 
-    inline fn convertColor(self: Self, c: Color) Rgb {
+    inline fn convertColor(self: *const Self, c: Color) Rgb {
         return switch (c) {
             .rgb => |v| v,
             .basic => |v| self.palette[@intFromEnum(v)],

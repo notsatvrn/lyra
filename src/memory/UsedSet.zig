@@ -15,13 +15,13 @@ tail: usize = 0,
 
 const Self = @This();
 
-pub inline fn init(allocator: std.mem.Allocator, size: usize) !Self {
+pub fn init(allocator: std.mem.Allocator, size: usize) !Self {
     const buffer = try allocator.alloc(u64, (size + 63) / 64);
     std.crypto.secureZero(u64, buffer);
     return .{ .ptr = buffer.ptr, .len = size };
 }
 
-pub inline fn deinit(self: Self, allocator: std.mem.Allocator) void {
+pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
     allocator.free(self.ptr[0 .. (self.len + 63) / 64]);
 }
 
