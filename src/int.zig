@@ -10,7 +10,6 @@ pub const InterruptStack = isr.InterruptStack;
 
 const std = @import("std");
 const util = @import("util.zig");
-const io = @import("io.zig");
 
 // PROGRAMMABLE INTERRUPT CONTROLLER
 // https://wiki.osdev.org/8259_PIC
@@ -32,35 +31,35 @@ const ICW4_8086 = 0x01;
 
 // https://wiki.osdev.org/8259_PIC#Initialisation
 pub inline fn remapPIC(offset1: u8, offset2: u8) void {
-    const a1 = io.in(u8, PIC1_DATA); // save masks
-    const a2 = io.in(u8, PIC2_DATA);
+    const a1 = util.in(u8, PIC1_DATA); // save masks
+    const a2 = util.in(u8, PIC2_DATA);
 
-    io.out(u8, PIC1_CMD, ICW1_INIT | ICW1_ICW4); // starts the initialization sequence (in cascade mode)
+    util.out(u8, PIC1_CMD, ICW1_INIT | ICW1_ICW4); // starts the initialization sequence (in cascade mode)
     util.delay();
-    io.out(u8, PIC2_CMD, ICW1_INIT | ICW1_ICW4);
+    util.out(u8, PIC2_CMD, ICW1_INIT | ICW1_ICW4);
     util.delay();
-    io.out(u8, PIC1_DATA, offset1); // ICW2: Primary PIC vector offset
+    util.out(u8, PIC1_DATA, offset1); // ICW2: Primary PIC vector offset
     util.delay();
-    io.out(u8, PIC2_DATA, offset2); // ICW2: Secondary PIC vector offset
+    util.out(u8, PIC2_DATA, offset2); // ICW2: Secondary PIC vector offset
     util.delay();
-    io.out(u8, PIC1_DATA, 4); // ICW3: tell Primary PIC that there is a secondary PIC at IRQ2 (0000 0100)
+    util.out(u8, PIC1_DATA, 4); // ICW3: tell Primary PIC that there is a secondary PIC at IRQ2 (0000 0100)
     util.delay();
-    io.out(u8, PIC2_DATA, 2); // ICW3: tell Secondary PIC its cascade identity (0000 0010)
-    util.delay();
-
-    io.out(u8, PIC1_DATA, ICW4_8086); // ICW4: have the PICs use 8086 mode (and not 8080 mode)
-    util.delay();
-    io.out(u8, PIC2_DATA, ICW4_8086);
+    util.out(u8, PIC2_DATA, 2); // ICW3: tell Secondary PIC its cascade identity (0000 0010)
     util.delay();
 
-    io.out(u8, PIC1_DATA, a1); // restore saved masks.
-    io.out(u8, PIC2_DATA, a2);
+    util.out(u8, PIC1_DATA, ICW4_8086); // ICW4: have the PICs use 8086 mode (and not 8080 mode)
+    util.delay();
+    util.out(u8, PIC2_DATA, ICW4_8086);
+    util.delay();
+
+    util.out(u8, PIC1_DATA, a1); // restore saved masks.
+    util.out(u8, PIC2_DATA, a2);
 }
 
 pub inline fn disablePIC() void {
     // mask all interrupts
-    io.out(u8, PIC1_DATA, 0xFF);
-    io.out(u8, PIC2_DATA, 0xFF);
+    util.out(u8, PIC1_DATA, 0xFF);
+    util.out(u8, PIC2_DATA, 0xFF);
 }
 
 // INTERRUPT HANDLERS
@@ -187,14 +186,14 @@ pub fn registerIRQ(irq: u4, handler: ?IRQHandler) void {
 pub fn maskIRQ(irq: u4, mask: bool) void {
     // Figure out if primary or secondary PIC owns the IRQ.
     const port: u16 = if (irq < 8) PIC1_DATA else PIC2_DATA;
-    const old = io.in(u8, port); // Retrieve the current mask.
+    const old = util.in(u8, port); // Retrieve the current mask.
 
     // Mask or unmask the interrupt.
     const shift: u3 = @truncate(irq % 8);
     if (mask) {
-        io.out(u8, port, old | (@as(u8, 1) << shift));
+        util.out(u8, port, old | (@as(u8, 1) << shift));
     } else {
-        io.out(u8, port, old & ~(@as(u8, 1) << shift));
+        util.out(u8, port, old & ~(@as(u8, 1) << shift));
     }
 }
 
@@ -202,8 +201,8 @@ pub fn maskIRQ(irq: u4, mask: bool) void {
 inline fn signalPIC(irq: u4) void {
     if (irq >= 8) {
         // Signal to the secondary PIC.
-        io.out(u8, PIC2_CMD, EOI);
+        util.out(u8, PIC2_CMD, EOI);
     }
     // Signal to the primary PIC.
-    io.out(u8, PIC1_CMD, EOI);
+    util.out(u8, PIC1_CMD, EOI);
 }

@@ -27,7 +27,7 @@ pub var devices = Devices.init(memory.allocator);
 // CONFIGURATION SPACE (ACCESS MECHANISM #1)
 // https://osdev.wiki/wiki/PCI#Configuration_Space_Access_Mechanism_#1
 
-const io = @import("io.zig");
+const util = @import("util.zig");
 const rng = @import("rng.zig");
 
 const CONFIG_ADDRESS = 0xCF8;
@@ -47,8 +47,8 @@ inline fn configRead(comptime T: type, location: Location, offset: u8) T {
         .enable = true,
     };
 
-    io.out(u32, CONFIG_ADDRESS, @bitCast(addr));
-    const tmp = io.in(u32, CONFIG_DATA);
+    util.out(u32, CONFIG_ADDRESS, @bitCast(addr));
+    const tmp = util.in(u32, CONFIG_DATA);
     return switch (T) {
         u8 => @truncate(tmp >> @truncate(8 * (offset % 4))),
         u16 => @truncate(tmp >> @truncate(8 * (offset % 4))),

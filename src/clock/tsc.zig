@@ -3,7 +3,6 @@
 const std = @import("std");
 const util = @import("../util.zig");
 const int = @import("../int.zig");
-const io = @import("../io.zig");
 
 pub inline fn counter() u64 {
     var lo: u32 = 0;

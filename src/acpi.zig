@@ -1,7 +1,7 @@
 const std = @import("std");
 const limine = @import("limine.zig");
 const memory = @import("memory.zig");
-const io = @import("io.zig");
+const util = @import("util.zig");
 const clock = @import("clock.zig");
 
 const logger = @import("log.zig").Logger{ .name = "acpi" };
@@ -27,9 +27,11 @@ export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.c) 
 }
 
 export fn uacpi_kernel_log(level: c.uacpi_log_level, str: [*c]const u8) callconv(.c) void {
+    // trace = 5, debug = 4, we treat them the same way
+    // otherwise it's the same as std.log.Level + 1
+    const lvl = @min(level - 1, 3);
     const slice = std.mem.span(str);
     const msg = std.mem.trimEnd(u8, slice, " \n");
-    const lvl = @min(level - 1, 3);
     logger.log(@enumFromInt(lvl), "{s}", .{msg});
 }
 
@@ -40,28 +42,28 @@ export fn uacpi_kernel_io_map(base: c.uacpi_io_addr, _: c.uacpi_size, handle: *c
 export fn uacpi_kernel_io_unmap(_: c.uacpi_handle) void {}
 
 export fn uacpi_kernel_io_read8(port: c.uacpi_handle, offset: c.uacpi_size, out: *u8) callconv(.c) c.uacpi_status {
-    out.* = io.in(u8, @truncate(@intFromPtr(port) + offset));
+    out.* = util.in(u8, @truncate(@intFromPtr(port) + offset));
     return c.UACPI_STATUS_OK;
 }
 export fn uacpi_kernel_io_read16(port: c.uacpi_handle, offset: c.uacpi_size, out: *u16) callconv(.c) c.uacpi_status {
-    out.* = io.in(u16, @truncate(@intFromPtr(port) + offset));
+    out.* = util.in(u16, @truncate(@intFromPtr(port) + offset));
     return c.UACPI_STATUS_OK;
 }
 export fn uacpi_kernel_io_read32(port: c.uacpi_handle, offset: c.uacpi_size, out: *u32) callconv(.c) c.uacpi_status {
-    out.* = io.in(u32, @truncate(@intFromPtr(port) + offset));
+    out.* = util.in(u32, @truncate(@intFromPtr(port) + offset));
     return c.UACPI_STATUS_OK;
 }
 
 export fn uacpi_kernel_io_write8(port: c.uacpi_handle, offset: c.uacpi_size, in: u8) callconv(.c) c.uacpi_status {
-    io.out(u8, @truncate(@intFromPtr(port) + offset), in);
+    util.out(u8, @truncate(@intFromPtr(port) + offset), in);
     return c.UACPI_STATUS_OK;
 }
 export fn uacpi_kernel_io_write16(port: c.uacpi_handle, offset: c.uacpi_size, in: u16) callconv(.c) c.uacpi_status {
-    io.out(u16, @truncate(@intFromPtr(port) + offset), in);
+    util.out(u16, @truncate(@intFromPtr(port) + offset), in);
     return c.UACPI_STATUS_OK;
 }
 export fn uacpi_kernel_io_write32(port: c.uacpi_handle, offset: c.uacpi_size, in: u32) callconv(.c) c.uacpi_status {
-    io.out(u32, @truncate(@intFromPtr(port) + offset), in);
+    util.out(u32, @truncate(@intFromPtr(port) + offset), in);
     return c.UACPI_STATUS_OK;
 }
 
@@ -139,7 +141,7 @@ pub const SdtHeader = packed struct {
     }
 };
 
-pub const Gas = packed struct {
+pub const Address = packed struct {
     address_space: u8,
     bit_width: u8,
     bit_offset: u8,
@@ -147,20 +149,21 @@ pub const Gas = packed struct {
     address: u64,
 
     const AddressSpace = enum(u8) {
-        memory = 0x0,
-        io = 0x0,
-        pci = 0x2,
-        ec = 0x3,
-        smbus = 0x4,
-        cmos = 0x5,
-        pci_bar_target = 0x6,
-        ipmi = 0x7,
-        gpio = 0x8,
-        serial = 0x9,
-        pcc = 0xA,
+        memory,
+        io,
+        pci,
+        ec,
+        smbus,
+        cmos,
+        pci_bar_target,
+        ipmi,
+        gpio,
+        serial,
+        pcc,
+        _,
     };
 
-    pub inline fn addressSpace(self: Gas) ?AddressSpace {
+    pub inline fn addressSpace(self: Address) ?AddressSpace {
         if (self.address_space > 0xA) return null;
         return @enumFromInt(self.address_space);
     }
@@ -215,21 +218,21 @@ pub const Fadt = packed struct {
     _reserved2: u8,
     flags: u32,
 
-    reset_reg: Gas,
+    reset_reg: Address,
     reset_value: u8,
     _reserved3: u24,
 
     firmware_ctrl: u64,
     dsdt: u64,
 
-    pm1a_evt_blk: Gas,
-    pm1b_evt_blk: Gas,
-    pm1a_cnt_blk: Gas,
-    pm1b_cnt_blk: Gas,
-    pm2_cnt_blk: Gas,
-    pm_tmr_blk: Gas,
-    gpe0_blk: Gas,
-    gpe1_blk: Gas,
+    pm1a_evt_blk: Address,
+    pm1b_evt_blk: Address,
+    pm1a_cnt_blk: Address,
+    pm1b_cnt_blk: Address,
+    pm2_cnt_blk: Address,
+    pm_tmr_blk: Address,
+    gpe0_blk: Address,
+    gpe1_blk: Address,
 };
 
 /// https://wiki.osdev.org/HPET
@@ -241,7 +244,7 @@ pub const Hpet = packed struct {
     reserved: u1,
     legacy_replacement: u1,
     pci_vendor_id: u16,
-    address: Gas,
+    address: Address,
     hpet_number: u8,
     minimum_tick: u16,
     page_protection: u8,

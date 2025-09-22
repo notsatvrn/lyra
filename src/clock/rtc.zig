@@ -1,7 +1,7 @@
 //! https://wiki.osdev.org/RTC
 
 const std = @import("std");
-const io = @import("../io.zig");
+const util = @import("../util.zig");
 
 const cmos_addr = 0x70;
 const cmos_data = 0x71;
@@ -17,18 +17,18 @@ const RTCOutput = packed struct(u48) {
 
 // get RTC output but don't fix values
 fn rawRTC() RTCOutput {
-    io.out(u8, cmos_addr, 0x00);
-    const sec = io.in(u8, cmos_data);
-    io.out(u8, cmos_addr, 0x02);
-    const min = io.in(u8, cmos_data);
-    io.out(u8, cmos_addr, 0x04);
-    const hr = io.in(u8, cmos_data);
-    io.out(u8, cmos_addr, 0x07);
-    const day = io.in(u8, cmos_data);
-    io.out(u8, cmos_addr, 0x08);
-    const mon = io.in(u8, cmos_data);
-    io.out(u8, cmos_addr, 0x09);
-    const yr = io.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x00);
+    const sec = util.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x02);
+    const min = util.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x04);
+    const hr = util.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x07);
+    const day = util.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x08);
+    const mon = util.in(u8, cmos_data);
+    util.out(u8, cmos_addr, 0x09);
+    const yr = util.in(u8, cmos_data);
 
     return .{
         .second = sec,
@@ -46,7 +46,7 @@ inline fn bcd2bin(bcd: u8) u8 {
 
 // fix raw RTC output
 fn fixRawRTC(o: RTCOutput) RTCOutput {
-    const b = io.in(u8, 0x0B);
+    const b = util.in(u8, 0x0B);
     const bcd = (b & 0x04) == 0;
     const h24 = (b & 0x02) == 1;
 
@@ -78,8 +78,8 @@ fn fixRawRTC(o: RTCOutput) RTCOutput {
 }
 
 inline fn isRTCUpdating() bool {
-    io.out(u8, cmos_addr, 0x0A);
-    return (io.in(u8, cmos_data) & 0x80) != 0;
+    util.out(u8, cmos_addr, 0x0A);
+    return (util.in(u8, cmos_data) & 0x80) != 0;
 }
 
 /// Read current time as unix timestamp (in seconds)
