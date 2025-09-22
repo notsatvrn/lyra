@@ -24,20 +24,20 @@ pub const Color = union(Type) {
 
 pub const Basic = enum(u4) {
     black,
-    blue,
-    green,
-    cyan,
     red,
-    magenta,
+    green,
     brown,
+    blue,
+    magenta,
+    cyan,
     light_gray,
     dark_gray,
-    light_blue,
-    light_green,
-    light_cyan,
     light_red,
-    light_magenta,
+    light_green,
     yellow,
+    light_blue,
+    light_magenta,
+    light_cyan,
     white,
 
     pub fn toAnsi(self: Basic, bg: bool) u8 {
@@ -52,23 +52,22 @@ pub const Basic = enum(u4) {
 
 // https://int10h.org/blog/2022/06/ibm-5153-color-true-cga-palette/
 // using the canonical palette to fit in with emulators
-// may be modified in framebuffer mode using ANSI escape codes
 pub const palette16: [16]Rgb = .{
     Rgb.fromHex(0x000000), // black
-    Rgb.fromHex(0x0000AA), // blue
-    Rgb.fromHex(0x00AA00), // green
-    Rgb.fromHex(0x00AAAA), // cyan
     Rgb.fromHex(0xAA0000), // red
-    Rgb.fromHex(0xAA00AA), // magenta
+    Rgb.fromHex(0x00AA00), // green
     Rgb.fromHex(0xAA5500), // brown
+    Rgb.fromHex(0x0000AA), // blue
+    Rgb.fromHex(0xAA00AA), // magenta
+    Rgb.fromHex(0x00AAAA), // cyan
     Rgb.fromHex(0xAAAAAA), // light gray
     Rgb.fromHex(0x555555), // dark gray
-    Rgb.fromHex(0x5555FF), // light blue
-    Rgb.fromHex(0x55FF55), // light green
-    Rgb.fromHex(0x55FFFF), // light cyan
     Rgb.fromHex(0xFF5555), // light red
-    Rgb.fromHex(0xFF55FF), // light magenta
+    Rgb.fromHex(0x55FF55), // light green
     Rgb.fromHex(0xFFFF55), // yellow
+    Rgb.fromHex(0x5555FF), // light blue
+    Rgb.fromHex(0xFF55FF), // light magenta
+    Rgb.fromHex(0x55FFFF), // light cyan
     Rgb.fromHex(0xFFFFFF), // white
 };
 

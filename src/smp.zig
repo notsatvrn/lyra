@@ -84,6 +84,10 @@ pub const Barrier = struct {
         while (@atomicLoad(usize, &self.current, .monotonic) != self.expected)
             std.atomic.spinLoopHint();
     }
+
+    pub inline fn reset(self: *Barrier) void {
+        self.current = 0;
+    }
 };
 
 // CPU-LOCAL STORAGE

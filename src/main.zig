@@ -26,7 +26,9 @@ export fn stage1() noreturn {
     int.isr.storeStack();
     int.remapPIC(32, 40);
     tty.init();
+    defer tty.sync();
     logger.info("bootloader: {f}", .{limine.bootldr.response});
+    logger.info("boot params: {s}", .{limine.kfile.response.file.cmdline});
     cpuid.initVendor();
     logger.info("cpu vendor: {s}", .{@tagName(cpuid.vendor)});
     cpuid.initFeatures();
@@ -57,6 +59,7 @@ fn stage2() noreturn {
 
     clock.stall(std.time.ns_per_ms);
     logger.debug("halting...", .{});
+    smp.runOnce(tty.sync);
     util.halt();
 }
 

@@ -26,19 +26,11 @@ export fn uacpi_kernel_unmap(virt: ?*anyopaque, len: c.uacpi_size) callconv(.c) 
     memory.vmm.unmapSimple(@intFromPtr(virt), len);
 }
 
-export fn uacpi_kernel_log(
-    level: c.uacpi_log_level,
-    str: [*c]const u8,
-) callconv(.c) void {
+export fn uacpi_kernel_log(level: c.uacpi_log_level, str: [*c]const u8) callconv(.c) void {
     const slice = std.mem.span(str);
     const msg = std.mem.trimEnd(u8, slice, " \n");
-    switch (level) {
-        c.UACPI_LOG_INFO => logger.info("{s}", .{msg}),
-        c.UACPI_LOG_WARN => logger.warn("{s}", .{msg}),
-        c.UACPI_LOG_ERROR => logger.err("{s}", .{msg}),
-        c.UACPI_LOG_DEBUG | c.UACPI_LOG_TRACE => logger.debug("{s}", .{msg}),
-        else => unreachable,
-    }
+    const lvl = @min(level - 1, 3);
+    logger.log(@enumFromInt(lvl), "{s}", .{msg});
 }
 
 export fn uacpi_kernel_io_map(base: c.uacpi_io_addr, _: c.uacpi_size, handle: *c.uacpi_handle) callconv(.c) c.uacpi_status {

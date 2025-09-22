@@ -4,6 +4,8 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 const Basic = colors.Basic;
 
+const Rgb = @import("../gfx.zig").color.Rgb;
+
 // COLORS
 
 pub const ColorPart = enum(u8) { foreground = 38, background = 48, underline = 58 };
@@ -39,7 +41,8 @@ pub const StatefulEffect = union(Effect) {
     bold,
     faint,
     underline: Underline,
-    blinking,
+    // if true, rapid
+    blinking: Blinking,
     inverse,
     hidden,
     strikethru,
@@ -53,6 +56,11 @@ pub const StatefulEffect = union(Effect) {
         dashed = 5,
     };
 
+    pub const Blinking = enum(u8) {
+        normal = 5,
+        rapid = 6,
+    };
+
     pub fn format(self: StatefulEffect, writer: *std.Io.Writer) !void {
         if (self == .underline) {
             try writer.print("4:{}", .{@intFromEnum(self.underline)});
@@ -63,6 +71,7 @@ pub const StatefulEffect = union(Effect) {
 pub const Effects = struct {
     inner: Effect.Set = Effect.Set.initEmpty(),
     underline: StatefulEffect.Underline = .single,
+    blinking: StatefulEffect.Blinking = .normal,
 
     // std.meta.FieldType doesn't work here
     fn effectType(comptime effect: Effect) type {
@@ -77,11 +86,11 @@ pub const Effects = struct {
     }
 
     pub fn set(self: *Effects, comptime effect: Effect, value: effectType(effect)) void {
-        if (effect == .underline) {
-            if (value) |underline| {
-                self.inner.insert(.underline);
-                self.underline = underline;
-            } else self.inner.remove(.underline);
+        if (effect == .underline or effect == .blinking) {
+            if (value) |val| {
+                self.inner.insert(effect);
+                @field(self, @tagName(effect)) = val;
+            } else self.inner.remove(effect);
             return;
         }
 
@@ -154,6 +163,8 @@ pub const Command = union(enum) {
             color: ?Color = null,
         },
 
+        // PRINTING
+
         pub fn format(self: Sgr, writer: *std.Io.Writer) !void {
             return switch (self) {
                 .reset => {},
@@ -182,18 +193,21 @@ pub const Command = union(enum) {
             }
         }
 
-        fn fromInt(int: u8) ?Sgr {
+        // PARSING
+
+        const Iterator = std.mem.SplitIterator(u8, .scalar);
+
+        fn fromInt(int: u8, iter: *Iterator) ?Sgr {
             return switch (int) {
                 0 => .reset,
                 1 => .{ .set_effect = .bold },
                 2 => .{ .set_effect = .faint },
                 // we don't support italics so we'll just do blinking instead
-                3 => .{ .set_effect = .blinking },
-                // TODO: underline
-                4 => null,
-                5 => .{ .set_effect = .blinking },
-                // TODO: rapid blink
-                6 => null,
+                3 => .{ .set_effect = .{ .blinking = .normal } },
+                // special cases for other underlines, so it must be single
+                4 => .{ .set_effect = .{ .underline = .single } },
+                5 => .{ .set_effect = .{ .blinking = .normal } },
+                6 => .{ .set_effect = .{ .blinking = .rapid } },
                 7 => .{ .set_effect = .inverse },
                 8 => .{ .set_effect = .hidden },
                 9 => .{ .set_effect = .strikethru },
@@ -210,8 +224,7 @@ pub const Command = union(enum) {
                 23 => .{ .unset_effect = .blinking },
                 24 => .{ .unset_effect = .underline },
                 25 => .{ .unset_effect = .blinking },
-                // TODO: rapid blink
-                26 => null,
+                26 => .{ .unset_effect = .blinking },
                 27 => .{ .unset_effect = .inverse },
                 28 => .{ .unset_effect = .hidden },
                 29 => .{ .unset_effect = .strikethru },
@@ -219,20 +232,26 @@ pub const Command = union(enum) {
                     .part = .foreground,
                     .color = .{ .basic = @enumFromInt(v - 30) },
                 } },
-                // TODO: advanced foreground color setting
-                38 => null,
+                38 => .{ .set_color = .{
+                    .part = .foreground,
+                    .color = parseAdvancedColor(iter),
+                } },
                 39 => .{ .set_color = .{ .part = .foreground } },
                 40...47 => |v| .{ .set_color = .{
                     .part = .background,
                     .color = .{ .basic = @enumFromInt(v - 40) },
                 } },
-                // TODO: advanced background color setting
-                48 => null,
+                48 => .{ .set_color = .{
+                    .part = .background,
+                    .color = parseAdvancedColor(iter),
+                } },
                 49 => .{ .set_color = .{ .part = .background } },
                 53 => .{ .set_effect = .overline },
                 55 => .{ .unset_effect = .overline },
-                // TODO: underline color setting
-                58 => null,
+                58 => .{ .set_color = .{
+                    .part = .underline,
+                    .color = parseAdvancedColor(iter),
+                } },
                 59 => .{ .set_color = .{ .part = .underline } },
                 90...97 => |v| .{ .set_color = .{
                     .part = .foreground,
@@ -248,43 +267,85 @@ pub const Command = union(enum) {
             };
         }
 
-        pub fn parse(buffer: []const u8) ?Command {
-            var iterator = std.mem.SplitIterator(u8, .scalar){
-                .buffer = buffer,
-                .delimiter = ';',
-                .index = 0,
+        fn parseAdvancedColor(iter: *Iterator) ?Color {
+            const fmt_str = iter.next() orelse return null;
+            const fmt = std.fmt.parseInt(u8, fmt_str, 10) catch return null;
+
+            if (fmt == 5) {
+                const color_str = iter.next() orelse return null;
+                const color = std.fmt.parseInt(u8, color_str, 10) catch return null;
+                return .{ .@"256" = color };
+            }
+
+            const r_str = iter.next() orelse return null;
+            const r = std.fmt.parseInt(u8, r_str, 10) catch return null;
+            const g_str = iter.next() orelse return null;
+            const g = std.fmt.parseInt(u8, g_str, 10) catch return null;
+            const b_str = iter.next() orelse return null;
+            const b = std.fmt.parseInt(u8, b_str, 10) catch return null;
+
+            const color = Rgb.fromBpc8(.{ .r = r, .b = b, .g = g });
+            return .{ .rgb = color };
+        }
+
+        fn parseUnderline(part: []const u8) ?Sgr {
+            if (part.len < 3) return null;
+            if (part[0] != '4') return null;
+            if (part[1] != ':') return null;
+            return switch (part[2]) {
+                '0' => .{ .unset_effect = .underline },
+                '1' => .{ .set_effect = .{ .underline = .single } },
+                '2' => .{ .set_effect = .{ .underline = .double } },
+                '3' => .{ .set_effect = .{ .underline = .curly } },
+                '4' => .{ .set_effect = .{ .underline = .dotted } },
+                '5' => .{ .set_effect = .{ .underline = .dashed } },
+                else => null,
             };
+        }
+
+        pub fn parse(buffer: []const u8) ?Command {
+            var iter = Iterator{ .buffer = buffer, .delimiter = ';', .index = 0 };
             var multi = std.ArrayList(Sgr){};
 
             first: {
-                const part = iterator.first();
+                const part = iter.first();
                 if (part.len == 0) {
                     // CSI m is an alias of CSI 0 m, which is the reset command
-                    if (iterator.index == null) return .{ .sgr = .reset };
+                    if (iter.index == null) return .{ .sgr = .reset };
                     break :first multi.append(allocator, .reset) catch return null;
+                } else if (parseUnderline(part)) |underline| {
+                    // underlines aren't common
+                    @branchHint(.unlikely);
+                    if (iter.index == null) return .{ .sgr = underline };
+                    break :first multi.append(allocator, underline) catch return null;
                 }
 
                 const int = std.fmt.parseInt(u8, part, 10) catch break :first;
-                if (Sgr.fromInt(int)) |sgr| {
-                    if (iterator.index == null and int != 22) return .{ .sgr = sgr };
+                if (Sgr.fromInt(int, &iter)) |sgr| {
+                    if (iter.index == null and int != 22) return .{ .sgr = sgr };
                     // either we have more commands to parse, or had command 22
                     multi.append(allocator, sgr) catch return null;
                     // 22 is normal intensity. fromInt will only return unset faint, but it also unsets bold
                     if (int == 22) multi.append(allocator, .{ .unset_effect = .bold }) catch return null;
-                } else if (iterator.index == null) return null;
+                } else if (iter.index == null) return null;
             }
 
-            while (iterator.next()) |part| {
+            while (iter.next()) |part| {
                 if (part.len == 0) {
                     // probably won't encounter ESC[;;m
                     // very often in actual applications
                     @branchHint(.unlikely);
                     multi.append(allocator, .reset) catch return null;
                     continue;
+                } else if (parseUnderline(part)) |underline| {
+                    // underlines aren't common
+                    @branchHint(.unlikely);
+                    multi.append(allocator, underline) catch return null;
+                    continue;
                 }
 
                 const int = std.fmt.parseInt(u8, part, 10) catch continue;
-                const sgr = Sgr.fromInt(int) orelse continue;
+                const sgr = Sgr.fromInt(int, &iter) orelse continue;
                 multi.append(allocator, sgr) catch return null;
                 // 22 is normal intensity. fromInt will only return unset faint, but it also unsets bold
                 if (int == 22) multi.append(allocator, .{ .unset_effect = .bold }) catch return null;

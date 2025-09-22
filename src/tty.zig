@@ -4,8 +4,6 @@ const gfx = @import("gfx.zig");
 const Framebuffer = gfx.Framebuffer;
 const Rect = gfx.Rect;
 
-const oldschoolPGC = @import("tty/fonts.zig").oldschoolPGC;
-
 pub const colors = @import("tty/colors.zig");
 pub const Color = colors.Color;
 const Rgb = colors.Rgb;
@@ -16,7 +14,9 @@ pub const ColorPart = effects.ColorPart;
 const limine = @import("limine.zig");
 const VideoMode = limine.Framebuffer.VideoMode;
 
+const oldschoolPGC = @import("tty/fonts.zig").oldschoolPGC;
 const allocator = @import("memory.zig").allocator;
+const Lock = @import("utils").lock.SpinLock;
 
 // STRUCTURES
 
@@ -61,6 +61,8 @@ const Virtual = struct {
     outputs: std.ArrayList(Framebuffer) = .{},
     damage: Rect = .{},
 };
+
+pub var lock = Lock{};
 
 // PLACING CHARACTERS
 
@@ -150,8 +152,6 @@ inline fn writeChar(c: u21) void {
     }
 }
 
-// SPECIAL CHARACTER HANDLING
-
 pub fn put(c: u8) void {
     const char = state.parse(c) orelse return;
     // TODO: unicode lookup table
@@ -177,9 +177,14 @@ pub fn put(c: u8) void {
     }
 }
 
-pub inline fn print(string: []const u8) void {
-    for (string) |c| put(c);
+// WRITING
+
+fn write(_: void, bytes: []const u8) error{}!usize {
+    for (bytes) |c| put(c);
+    return bytes.len;
 }
+
+pub const writer = std.Io.GenericWriter(void, error{}, write){ .context = void{} };
 
 // SCROLLING / CLEARING
 
@@ -322,6 +327,10 @@ pub const State = struct {
 
     fn processCommand(self: *Self, command: *effects.Command) void {
         switch (command.*) {
+            .move_absolute => |pos| {
+                cursor.col = @min(pos.col, info.cols) -| 1;
+                cursor.row = @min(pos.row, info.rows) -| 1;
+            },
             .sgr => |sgr| self.processSgr(sgr),
             .multi_sgr => |*list| {
                 for (list.items) |sgr|
@@ -339,13 +348,16 @@ pub const State = struct {
                 self.resetColor(.foreground);
                 self.resetColor(.background);
                 self.resetColor(.underline);
+                self.effects = .{};
             },
             .set_effect => |v| switch (v) {
                 .underline => |u| self.effects.set(.underline, u),
+                .blinking => |b| self.effects.set(.blinking, b),
                 inline else => |_, e| self.effects.set(e, true),
             },
             .unset_effect => |v| switch (v) {
                 .underline => self.effects.set(.underline, null),
+                .blinking => self.effects.set(.blinking, null),
                 inline else => |e| self.effects.set(e, false),
             },
             .set_color => |v| switch (v.part) {
